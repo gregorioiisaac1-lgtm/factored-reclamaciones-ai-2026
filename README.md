@@ -1,10 +1,12 @@
 # Consulta de reclamaciones · Factored AI & Data Hackathon 2026
 
-Prototipo bilingüe y **simulado** para consultar el estado de una reclamación. Modelo local
+Prototipo bilingüe y **simulado** para consultar el estado de una reclamación y guardar
+un ticket de derivación en una cola local temporal. Modelo local
 TF-IDF de n-gramas de caracteres + regresión logística para enrutar la intención;
 orquestador con aclaraciones, seguimiento, planes de siguientes acciones y traza de pasos ejecutados;
 sesiones de prueba firmadas; permiso por propietario aplicado en el servicio de expedientes;
-respuesta construida solo después de volver a consultar la fuente. No hay clientes reales, claves
+respuesta construida solo después de volver a consultar la fuente. El ticket requiere
+confirmación y una escritura seguida de lectura. No hay clientes reales, claves
 AWS, respuestas del banco en vivo ni servicios externos de IA.
 
 ## Demo pública y prueba guiada
@@ -20,16 +22,20 @@ base y las decisiones de seguridad. La interfaz se puede usar en español y port
 1. Pulsa **«Empezar demo como Alicia»**. El campo de folio ya propone `R-101`:
    pulsa «Consultar estado». Verás estado y fecha completos, fuente y copia de 2025.
    El panel «Tu siguiente paso» ofrece «Verificar fecha», «Preguntar por el motivo»
-   y «Preparar derivación (demo)» según la respuesta autorizada. Cada acción vuelve
-   al servicio para consultar el registro y sus permisos. Como el motivo no existe
+   y «Preparar derivación (demo)» según la respuesta autorizada. Las consultas de
+   hechos vuelven al servicio para revisar registro y permisos. Como el motivo no existe
    en la fuente, esa pregunta prepara una derivación sin inventar un motivo.
-   «Verificación y pasos ejecutados» muestra la traza y el paquete. El paquete
-   **no se envía** a un agente real. Prueba `R-102`; para entrar como **Bruno (prueba)**,
+   Pulsa **«Crear ticket de prueba»** para confirmar la escritura; aparecerá `T-...`
+   solo tras guardarlo y leerlo de vuelta. «Verificación y pasos ejecutados» muestra
+   la traza y el paquete autorizado. El ticket **no se envía** a un agente real.
+   Prueba `R-102`; para entrar como **Bruno (prueba)**,
    cierra la sesión y abre «Probar otro perfil con PIN público»; el PIN es `2468`
    y su folio sugerido es `R-201`. Vuelve a Alicia para consultar `R-201` sin permiso.
 2. Abre «Simular errores» para provocar una caída de la fuente o vencer la sesión.
    Pulsa «No tengo el folio» y escribe `R-102` en el formulario; también puedes
    escribir `R-101 y R-201`: la app te exigirá elegir un solo folio.
+   Marca «Simular falla al guardar el ticket», prepara una derivación y comprueba
+   que no aparece un ID hasta desmarcarla y confirmar de nuevo.
    Cambia a «Português» para repetir las preguntas en portugués.
    Despliega «Ver historial de la consulta» si quieres ver los turnos anteriores.
 3. Para reproducir el despliegue, usa los archivos de este repositorio y elige
@@ -55,7 +61,7 @@ selecciona `streamlit_app.py` como archivo principal al desplegar.
 python -m pip install -r requirements.txt
 streamlit run streamlit_app.py
 python evaluate.py
-python -m unittest test_security.py
+python -m unittest test_security.py test_handoff_ticket.py
 python update_fixture.py
 ```
 
@@ -88,13 +94,13 @@ ahorros reales a la demo. La gráfica de la app muestra los seis estados agregad
 | --- | --- |
 | Preparación | `audit_data.py` lee ZIP sin extraer, comprueba IDs únicos y empareja transcripciones con llamadas. Rechaza IDs duplicados. Solo se publica conteo agregado. |
 | Intención | Clasificación local en `status`, `new_dispute`, `human`, `other`; baja confianza da `unclear`. Se compara con reglas de palabras clave sobre los mismos 30 textos de prueba ES/PT. |
-| Orquestación | El modelo propone la ruta; solicitudes explícitas de humano o cargo nuevo tienen prioridad. El controlador conserva el último folio verificado solo para el mismo perfil y pide datos faltantes. Una pregunta por fecha o motivo reutiliza el folio, pero **vuelve a consultar la fuente** y a comprobar permiso; el estado anterior no se reutiliza. Una derivación tras un folio confirmado vuelve a verificar propiedad, estado y fecha. El servicio decide qué acciones ofrecer según el resultado: fecha, motivo o atención humana; los botones vuelven a ejecutar esas rutas y permisos. Nunca inventa un motivo ausente. Es un agente de flujo acotado, sin escritura autónoma ni generación libre. |
+| Orquestación | El modelo propone la ruta; solicitudes explícitas de humano o cargo nuevo tienen prioridad. El controlador conserva el último folio verificado solo para la misma sesión firmada y pide datos faltantes. Una pregunta por fecha o motivo reutiliza el folio, pero **vuelve a consultar la fuente** y a comprobar permiso; el estado anterior no se reutiliza. Una derivación tras un folio confirmado vuelve a verificar propiedad, estado y fecha. El servicio decide qué acciones ofrecer según el resultado: fecha, motivo o atención humana; los botones vuelven a ejecutar esas rutas y permisos. Nunca inventa un motivo ausente. Es un agente de flujo acotado, sin generación libre. El ticket necesita confirmación humana explícita en la pantalla. |
 | Identidad | Una sesión firmada expira. La identidad no se deriva de un número de cliente escrito en el chat. PIN público significa **solo simulación**. |
-| Privacidad de la demo | Se rechazan entradas con secuencias de 12 a 19 dígitos, con espacios o guiones opcionales, antes de guardarlas en el historial o formar el paquete de derivación. La interfaz oculta esa entrada. Este filtro sencillo no detecta todas las formas de información personal: usar solo datos ficticios. |
+| Privacidad de la demo | Se rechazan entradas con secuencias de 12 a 19 dígitos, con espacios o guiones opcionales, antes de guardarlas en el historial. El ticket almacena una descripción fija de la intención, **no** el texto libre del visitante. La interfaz oculta números largos rechazados. El filtro no detecta todas las formas de información personal: usar solo datos ficticios. |
 | Herramienta | `CaseRepository.lookup` verifica `owner == sub` en servidor. Caso ajeno o inexistente retorna lo mismo. Acepta `R-101`, `R101`, `R 101` y `R–101`. Si la petición de estado menciona dos folios distintos, solicita elegir uno antes de llamar la herramienta; si se solicita un agente con dos folios distintos, prepara la derivación sin asociar ningún estado. Dos fallos reales de la fuente causan derivación, aunque no se haya activado el simulador de errores. |
 | Respuesta | Estado y fecha proceden únicamente del registro de prueba. Siempre indica que es una copia de 2025 y no estado actual. Caso escalado se deriva a una persona. |
-| Acciones | Sin creación de reclamaciones, transferencias, reversos ni acceso a cuentas reales. No hay autonomía de escritura. |
-| Trazabilidad | La respuesta guarda fuente, tipo de resultado, cantidad de intentos, un plan de acciones y los pasos **realmente ejecutados**. La pantalla muestra una tarjeta del expediente solo cuando el servicio devuelve una lectura autorizada. Las derivaciones preparan un paquete con solicitud, hechos verificados y fecha si están autorizados, acciones intentadas y próximo paso. La app no envía el paquete fuera de la sesión de prueba. Un folio ajeno, inexistente, con datos inválidos o inaccesible por falla no aporta estado ni fecha. Un cargo nuevo no hereda el estado de un folio anterior. No muestra ni almacena razonamiento interno del modelo. |
+| Acciones | Sin creación de reclamaciones, transferencias, reversos ni acceso a cuentas reales. La única escritura es un ticket ficticio, solicitada con un botón de confirmación. La cola SQLite queda en el disco temporal de la instancia; un reinicio puede borrarla y los tickets dejan de poder leerse tras 24 horas. No hay bandeja de agentes reales. |
+| Trazabilidad | La respuesta guarda fuente, tipo de resultado, cantidad de intentos, un plan de acciones y los pasos **realmente ejecutados**. La pantalla muestra una tarjeta del expediente solo cuando el servicio devuelve una lectura autorizada. Las derivaciones preparan un paquete con solicitud categorizada, hechos verificados y fecha si están autorizados, acciones intentadas y próximo paso. Al confirmar, se verifica de nuevo el permiso, se guarda una sola vez por solicitud y se vuelve a leer el ticket; los fallos no muestran un éxito falso. La app no envía el paquete a una persona. Un folio ajeno, inexistente, con datos inválidos o inaccesible por falla no aporta estado ni fecha. Un cargo nuevo no hereda el estado de un folio anterior. No muestra ni almacena razonamiento interno del modelo. |
 | Actualización | Los archivos del reto son copia estática de 2025. Una integración real requiere origen autorizado, marcas de actualización, validaciones y prueba de cambios incrementales antes de mostrar actualidad. |
 
 `update_fixture.py` prueba, solo con datos inventados, aplicar un evento nuevo, repetirlo
@@ -102,9 +108,11 @@ sin cambios, ignorar uno viejo y rechazar un cambio de propietario del expedient
 
 ## Evaluación
 
-`evaluate.py` compara los mismos **25 escenarios** para ambos enrutadores. Reporta
-exactitud/F1 de intención, rutas correctas, automatizaciones correctas, divulgaciones
-indebidas detectadas y latencia local p50/p95. Incluye sesiones vencidas, token alterado,
+`evaluate.py` compara los mismos **25 escenarios** para ambos enrutadores. Para
+los casos etiquetados como derivación simula la confirmación explícita y exige
+guardar y leer el ticket de prueba antes de contar el resultado como correcto.
+Reporta exactitud/F1 de intención, rutas correctas, automatizaciones correctas,
+divulgaciones indebidas detectadas y latencia local p50/p95. Incluye sesiones vencidas, token alterado,
 expediente ajeno, folio inexistente, caída de herramienta, prompt injection y ES/PT.
 La exactitud de intención mide el clasificador sin reglas añadidas; los escenarios de
 flujo miden el controlador completo, que da prioridad a peticiones humanas explícitas,
@@ -118,8 +126,9 @@ ejemplos: anterior 147 aciertos, 4 errores y 137 abstenciones; actual 207 aciert
 Los casos son pocos y escritos a mano; no representan tráfico real ni miden mejora
 operativa en producción. Si un enrutador da peores resultados, se informa tal cual.
 La inferencia no llama API pagada; costo de API USD 0 y costo de hosting sin estimar.
-Las latencias reportadas solo miden el flujo local dentro del proceso Python; no
-incluyen red, navegador, arranque de la app ni concurrencia.
+Las latencias reportadas solo miden el flujo local dentro del proceso Python,
+incluida la cola SQLite local cuando corresponde; no incluyen red, navegador,
+tiempo humano de confirmación, arranque de la app ni concurrencia.
 La pestaña «Datos y resultados» muestra p50/p95 de esa única ejecución de 25
 escenarios por método; no es una medida de servicio alojado ni un ahorro en producción.
 
@@ -127,7 +136,8 @@ En esta medición local: entrenamiento 96 ejemplos, evaluación exploratoria de 
 con 30 ejemplos diferentes (15 ES y 15 PT). Acierto de intención: reglas 14/30,
 modelo 22/30. De 25 escenarios integrales: reglas 21 correctos, modelo 25;
 consultas de estado automatizadas
-correctamente 4/5 y 5/5, respectivamente; derivaciones correctas 6/8 y 8/8;
+correctamente 4/5 y 5/5, respectivamente; tickets de prueba confirmados
+en escenarios de derivación 6/8 y 8/8 (sin medir recepción humana);
 divulgaciones o acciones indebidas observadas 0/25 para ambos. El tamaño y la
 autoría de los ejemplos impiden extrapolar estas cifras a usuarios reales.
 En el flujo completo del modelo: español 13/13 y portugués 12/12; perfil ficticio
@@ -156,11 +166,30 @@ reunir y etiquetar consultas auténticas ES/PT con consentimiento; volver a medi
 un conjunto independiente y auditar grupos relevantes antes de dar servicio bancario.
 La app pública admite usuarios concurrentes en infraestructura de demo; el almacén de
 casos es ficticio en memoria y las sesiones se pierden al reiniciar el proceso.
+La cola local de tickets puede perderse al reiniciar la instancia; no tiene
+respaldo ni gestión por agentes. Los tickets caducan a las 24 horas y se depuran
+al crear otros nuevos.
 
 Las pruebas de `test_security.py` verifican también planes de acciones derivados
 del estado autorizado, ausencia de tarjetas verificadas para folios ajenos,
 la derivación con folio explícito,
 la actualización de un estado antes de pedir un agente, la revocación de acceso,
 la falla de fuente, la expiración de sesión y que no se adjunte un expediente
-anterior a una disputa nueva. Estas pruebas complementan los 25 escenarios de
-`evaluate.py`; no forman parte de sus métricas publicadas.
+anterior a una disputa nueva. `test_handoff_ticket.py` cubre confirmación,
+idempotencia, lectura después de escribir, perfiles, sesión vencida, revocación,
+errores de la cola, idioma portugués y caducidad. Estas pruebas complementan
+los 25 escenarios de `evaluate.py`; no forman parte de sus métricas publicadas.
+
+**Alcance de las métricas:** los 25 escenarios califican el flujo y, en los
+ocho casos que exigen derivación, simulan la confirmación humana y exigen
+escritura y lectura del ticket local. **No** miden recepción por una persona
+real ni tiempo humano de confirmación. El tiempo medido es local e incluye
+SQLite cuando se confirmó un ticket.
+
+## Entrega del hackathon
+
+El kickoff pide un repositorio público llamado `factored-hackathon-2026-[nombre-del-equipo]`,
+enlace a la app desplegada, presentación de **4 a 6 diapositivas** y **video breve
+obligatorio**. El repositorio de trabajo actual tiene un nombre diferente; conviene
+adaptarlo antes de entregar y volver a comprobar el despliegue después del cambio.
+Una demo funcional y pruebas honestas ayudan, pero no garantizan ganar.

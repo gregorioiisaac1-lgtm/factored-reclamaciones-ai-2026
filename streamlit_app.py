@@ -1,4 +1,4 @@
-"""Bilingual public demo of a read-only, simulated complaint-status workflow."""
+"""Bilingual public demo of complaint lookup and a confirmed mock handoff ticket."""
 
 from html import escape
 import json
@@ -8,7 +8,9 @@ import time
 import streamlit as st
 
 from intent import make_model
-from service import ACCOUNTS, CaseRepository, Conversation, SessionAuthority, SessionError, contains_sensitive_number, respond
+from handoff_store import TicketStore
+from service import (ACCOUNTS, CaseRepository, Conversation, SessionAuthority, SessionError,
+                     contains_sensitive_number, create_handoff_ticket, read_handoff_ticket, respond)
 
 
 st.set_page_config(
@@ -21,10 +23,10 @@ st.set_page_config(
 
 @st.cache_resource
 def resources():
-    return SessionAuthority(), CaseRepository(), make_model()
+    return SessionAuthority(), CaseRepository(), make_model(), TicketStore()
 
 
-authority, repository, model = resources()
+authority, repository, model, tickets = resources()
 
 
 def activate_test_session(account, pin):
@@ -34,6 +36,7 @@ def activate_test_session(account, pin):
     st.session_state.conversation = Conversation()
     st.session_state.messages = []
     st.session_state.simulate_error = False
+    st.session_state.simulate_ticket_error = False
 
 
 COPY = {
@@ -51,7 +54,7 @@ COPY = {
         "other_profile": "Probar otro perfil con PIN público",
         "session": "Sesión de prueba para {name} · duración máxima: 10 minutos.",
         "try": "Consulta guiada", "own": "Consultar mi folio",
-        "flow_intro": "Primero comprobamos el folio y el permiso. Después mostramos solo hechos de la fuente y acciones posibles. La consulta es de solo lectura.",
+        "flow_intro": "Primero comprobamos el folio y el permiso. Después mostramos hechos de la fuente y acciones posibles. Crear un ticket de prueba requiere tu confirmación.",
         "journey_steps": ["Sesión de prueba", "Consulta de folio", "Siguiente paso"],
         "workspace": "Mi expediente", "folio_label": "Folio de prueba",
         "folio_help": "Prueba con {cases}. Son datos inventados; también puedes escribir otro folio.",
@@ -73,14 +76,19 @@ COPY = {
             "handoff_reason_unknown": "Verifiqué estado y fecha, pero la fuente no documenta el motivo. Preparé la pregunta para revisión humana.",
             "handoff_escalated": "El registro aparece escalado; preparé su contexto para revisión humana.",
             "handoff_new_dispute": "Un cargo nuevo requiere evaluación humana. Esta demo no abre reclamaciones ni modifica operaciones.",
-            "handoff_requested": "Preparé el contexto de prueba para atención humana. No se envió a un agente real.",
+            "handoff_requested": "Preparé el contexto de prueba. Confirma si quieres guardar un ticket en la cola simulada.",
+            "ticket_created": "El ticket de prueba quedó confirmado. Si necesitas otra consulta, escribe un nuevo folio.",
+            "ticket_unavailable": "La cola o la fuente no permitió comprobar el ticket. Prepara otra derivación si lo necesitas.",
         },
         "actions": {"date": "Verificar fecha", "reason": "Preguntar por el motivo", "human": "Preparar derivación (demo)"},
         "orientation": "No tengo el folio", "free_question": "Otra pregunta (opcional)",
         "free_placeholder": "Escribe una pregunta sin datos bancarios reales…", "send": "Consultar",
         "empty_question": "Escribe una pregunta antes de enviarla.",
         "history": "Ver historial de la consulta", "history_empty": "Todavía no hay interacciones.",
-        "audit": "Verificación y pasos ejecutados", "simulated_handoff": "Paquete simulado: solo visible en esta sesión. No se envía a nadie.",
+        "audit": "Verificación y pasos ejecutados", "simulated_handoff": "Contexto listo. Puedes guardarlo en la cola de prueba; no lo recibe una persona real.",
+        "create_ticket": "Crear ticket de prueba", "ticket_confirmed": "Ticket {id}: guardado y leído de la cola de prueba. No lo recibe un agente real.",
+        "ticket_unavailable": "No pude comprobar este ticket en la cola de prueba. Prepara otra derivación.",
+        "ticket_expires": "Cola temporal de esta instancia; el ticket deja de poder leerse tras 24 horas y puede perderse si reinicia el servidor.",
         "examples_title": "Escenarios de prueba", "test_own": "Consultar folio propio",
         "test_foreign": "Probar folio ajeno", "test_ambiguous": "Consulta sin folio",
         "foreign": "Consultar un folio ajeno", "human": "Pedir un agente",
@@ -89,6 +97,7 @@ COPY = {
         "followup": "Preguntar por la fecha del último folio",
         "dispute": "Reportar un cargo", "logout": "Cerrar sesión",
         "advanced": "Simular errores", "fail": "Simular falla de la fuente",
+        "fail_ticket": "Simular falla al guardar el ticket",
         "expire": "Simular vencimiento de la sesión",
         "expired": "La sesión de prueba venció. Inicia una nueva para continuar.",
         "input": "Pregunta por una reclamación ficticia…",
@@ -115,6 +124,7 @@ COPY = {
             "not_available": "No hay folio disponible en esta sesión",
             "snapshot_answered": "Respondió con estado y fecha de la copia de 2025",
             "human_handoff": "Preparó el contexto para atención humana",
+            "ticket_saved": "Guardó un ticket de prueba", "ticket_read_back": "Comprobó el ticket en la cola de prueba",
             "outside_scope": "Informó que el trámite no está disponible",
         },
         "kind_labels": {"resolved": "Consulta resuelta", "handoff": "Derivación simulada",
@@ -137,12 +147,12 @@ COPY = {
         "method": "96 frases ficticias para entrenar; 30 frases diferentes para medir el clasificador sin reglas (15 ES, 15 PT). Los mismos 25 escenarios miden los flujos completos; la versión con modelo incluye reglas de seguridad y contexto de sesión.",
         "metric": "Medida", "rules": "Reglas", "learned": "Modelo local",
         "accuracy": "Intenciones correctas", "f1": "F1 macro",
-        "workflow": "Flujos correctos", "escalation": "Derivaciones correctas",
+        "workflow": "Flujos correctos", "escalation": "Rutas de derivación correctas",
         "automation": "Estados resueltos sin agente", "attempted": "Intentos en casos elegibles",
         "unsafe": "Divulgaciones indebidas observadas",
         "latency_title": "Tiempo local de respuesta",
         "p50": "p50 (ms)", "p95": "p95 (ms)",
-        "latency_note": "Una ejecución de 25 escenarios por método, dentro del mismo proceso. No incluye navegador, red ni arranque. API externa: USD 0 por caso; costo de alojamiento y operación no estimado.",
+        "latency_note": "Una ejecución de 25 escenarios por método; incluye SQLite local cuando el escenario requiere confirmar un ticket. No incluye navegador, tiempo de decisión de la persona, red ni arranque. API externa: USD 0 por caso; alojamiento sin estimar.",
         "language_note": "El modelo acertó {es}/{total_es} frases en español y {pt}/{total_pt} en portugués. Cuando duda, pide aclaración. Estas cifras no permiten afirmar calidad para usuarios reales.",
         "subgroups": "Flujos correctos por idioma: español {es}/{total_es}, portugués {pt}/{total_pt}. Por perfil ficticio: Alicia {a}/{total_a}, Bruno {b}/{total_b}. Son grupos demasiado pequeños para evaluar equidad.",
         "cv_note": "Selección del modelo: 3 repeticiones de validación cruzada en las 96 frases de entrenamiento ({old}/{n} aciertos del anterior; {new}/{n} del actual). Son 288 predicciones de las mismas 96 frases, no 288 casos independientes. El conjunto de 30 frases ya se había inspeccionado en una versión anterior: evaluación exploratoria, no prueba ciega.",
@@ -172,7 +182,7 @@ COPY = {
         "other_profile": "Testar outro perfil com PIN público",
         "session": "Sessão de teste para {name} · duração máxima: 10 minutos.",
         "try": "Consulta guiada", "own": "Consultar meu protocolo",
-        "flow_intro": "Primeiro verificamos o protocolo e a permissão. Depois mostramos apenas fatos da fonte e ações possíveis. A consulta é somente de leitura.",
+        "flow_intro": "Primeiro verificamos o protocolo e a permissão. Depois mostramos fatos da fonte e ações possíveis. Criar um ticket de teste exige sua confirmação.",
         "journey_steps": ["Sessão de teste", "Consulta do protocolo", "Próximo passo"],
         "workspace": "Meu protocolo", "folio_label": "Protocolo de teste",
         "folio_help": "Teste com {cases}. São dados fictícios; você também pode informar outro protocolo.",
@@ -194,14 +204,19 @@ COPY = {
             "handoff_reason_unknown": "Confirmei status e data, mas a fonte não documenta o motivo. Preparei a pergunta para revisão humana.",
             "handoff_escalated": "O registro está encaminhado; preparei o contexto para revisão humana.",
             "handoff_new_dispute": "Uma nova cobrança exige avaliação humana. Esta demonstração não abre reclamações nem altera operações.",
-            "handoff_requested": "Preparei o contexto de teste para atendimento humano. Ele não foi enviado a um atendente real.",
+            "handoff_requested": "Preparei o contexto de teste. Confirme se deseja salvar um ticket na fila simulada.",
+            "ticket_created": "O ticket de teste foi confirmado. Para outra consulta, informe um novo protocolo.",
+            "ticket_unavailable": "A fila ou a fonte não permitiu confirmar o ticket. Prepare outro encaminhamento se precisar.",
         },
         "actions": {"date": "Verificar data", "reason": "Perguntar o motivo", "human": "Preparar encaminhamento (demo)"},
         "orientation": "Não tenho o protocolo", "free_question": "Outra pergunta (opcional)",
         "free_placeholder": "Escreva uma pergunta sem dados bancários reais…", "send": "Consultar",
         "empty_question": "Escreva uma pergunta antes de enviar.",
         "history": "Ver histórico da consulta", "history_empty": "Ainda não há interações.",
-        "audit": "Verificação e etapas realizadas", "simulated_handoff": "Pacote simulado: visível apenas nesta sessão. Não é enviado a ninguém.",
+        "audit": "Verificação e etapas realizadas", "simulated_handoff": "Contexto pronto. Você pode salvá-lo na fila de teste; nenhuma pessoa o recebe.",
+        "create_ticket": "Criar ticket de teste", "ticket_confirmed": "Ticket {id}: salvo e lido da fila de teste. Nenhum atendente o recebe.",
+        "ticket_unavailable": "Não consegui confirmar este ticket na fila de teste. Prepare outro encaminhamento.",
+        "ticket_expires": "Fila temporária desta instância; o ticket deixa de ser legível após 24 horas e pode se perder se o servidor reiniciar.",
         "examples_title": "Cenários de teste", "test_own": "Consultar meu protocolo",
         "test_foreign": "Testar protocolo de outra pessoa", "test_ambiguous": "Pergunta sem protocolo",
         "foreign": "Consultar protocolo de outra pessoa", "human": "Pedir atendente",
@@ -210,6 +225,7 @@ COPY = {
         "followup": "Perguntar a data do último protocolo",
         "dispute": "Contestar uma cobrança", "logout": "Encerrar sessão",
         "advanced": "Simular erros", "fail": "Simular falha na fonte",
+        "fail_ticket": "Simular falha ao salvar o ticket",
         "expire": "Simular expiração da sessão",
         "expired": "A sessão de teste expirou. Inicie uma nova para continuar.",
         "input": "Pergunte sobre uma reclamação fictícia…",
@@ -236,6 +252,7 @@ COPY = {
             "not_available": "Nenhum protocolo disponível nesta sessão",
             "snapshot_answered": "Respondeu com status e data da cópia de 2025",
             "human_handoff": "Preparou o contexto para atendimento humano",
+            "ticket_saved": "Salvou um ticket de teste", "ticket_read_back": "Confirmou o ticket na fila de teste",
             "outside_scope": "Informou que o serviço não está disponível",
         },
         "kind_labels": {"resolved": "Consulta resolvida", "handoff": "Encaminhamento simulado",
@@ -258,12 +275,12 @@ COPY = {
         "method": "96 frases fictícias de treinamento; 30 frases diferentes para medir o classificador sem regras (15 ES, 15 PT). Os mesmos 25 cenários medem os fluxos completos; a versão com modelo inclui regras de segurança e contexto da sessão.",
         "metric": "Medida", "rules": "Regras", "learned": "Modelo local",
         "accuracy": "Intenções corretas", "f1": "F1 macro",
-        "workflow": "Fluxos corretos", "escalation": "Encaminhamentos corretos",
+        "workflow": "Fluxos corretos", "escalation": "Rotas de encaminhamento corretas",
         "automation": "Status resolvidos sem atendente", "attempted": "Tentativas em casos elegíveis",
         "unsafe": "Divulgações indevidas observadas",
         "latency_title": "Tempo local de resposta",
         "p50": "p50 (ms)", "p95": "p95 (ms)",
-        "latency_note": "Uma execução de 25 cenários por método, no mesmo processo. Não inclui navegador, rede nem inicialização. API externa: USD 0 por caso; custo de hospedagem e operação não estimado.",
+        "latency_note": "Uma execução de 25 cenários por método; inclui SQLite local quando o cenário exige confirmar um ticket. Não inclui navegador, tempo de decisão da pessoa, rede nem inicialização. API externa: USD 0 por caso; hospedagem não estimada.",
         "language_note": "O modelo acertou {es}/{total_es} frases em espanhol e {pt}/{total_pt} em português. Quando há dúvida, pede esclarecimento. Esses resultados não demonstram qualidade para clientes reais.",
         "subgroups": "Fluxos corretos por idioma: espanhol {es}/{total_es}, português {pt}/{total_pt}. Por perfil fictício: Alicia {a}/{total_a}, Bruno {b}/{total_b}. Os grupos são pequenos demais para avaliar equidade.",
         "cv_note": "Escolha do modelo: 3 repetições de validação cruzada nas 96 frases de treinamento ({old}/{n} acertos do anterior; {new}/{n} do atual). São 288 previsões das mesmas 96 frases, não 288 casos independentes. O conjunto de 30 frases já havia sido examinado em uma versão anterior: avaliação exploratória, não teste cego.",
@@ -320,7 +337,7 @@ with demo:
         try:
             authority.verify(st.session_state.token)
         except SessionError:
-            for key in ("token", "profile", "conversation", "messages", "simulate_error"):
+            for key in ("token", "profile", "conversation", "messages", "simulate_error", "simulate_ticket_error"):
                 st.session_state.pop(key, None)
             st.session_state.login_notice = t["expired"]
             st.rerun()
@@ -354,9 +371,16 @@ with demo:
         conversation = st.session_state.setdefault("conversation", Conversation())
         messages = st.session_state.setdefault("messages", [])
         last = messages[-1] if messages and messages[-1]["speaker"] == "assistant" else None
+        saved_ticket = (read_handoff_ticket(st.session_state.token, conversation,
+                                           authority, repository, tickets, last["ticket_id"],
+                                           fail_tool=st.session_state.get("simulate_error", False))
+                        if last and last.get("ticket_id") else None)
         plan = last.get("plan") if last else None
+        if last and last.get("ticket_id") and not saved_ticket:
+            plan = {"state": "ticket_unavailable", "actions": ("human",)}
         plan = plan or {"state": "ready", "actions": ("human",)}
-        stages = ("done", "done" if last else "current", "current" if last else "")
+        stages = ("done", "done" if last else "current",
+                  "done" if saved_ticket else "current" if last else "")
         st.markdown(
             '<div class="factored-journey">' + ''.join(
                 f'<span class="factored-step {style}">{index}. {escape(label)}</span>'
@@ -395,7 +419,7 @@ with demo:
                     prompt = ("Estado de " if lang == "es" else "Status do protocolo ") + folio.strip()
                 else:
                     st.warning(t["folio_missing"])
-            view = last.get("case_view") if last else None
+            view = last.get("case_view") if last and (not last.get("ticket_id") or saved_ticket) else None
             if view:
                 with st.container(border=True):
                     st.caption(t["verified_label"])
@@ -416,9 +440,31 @@ with demo:
                 st.caption(t["unverified_summary"])
             if last:
                 st.markdown(last["text"])
-                if last.get("handoff"):
+                if last.get("ticket_id"):
+                    if saved_ticket:
+                        st.success(t["ticket_confirmed"].format(id=last["ticket_id"]))
+                        st.caption(t["ticket_expires"])
+                    else:
+                        st.warning(t["ticket_unavailable"])
+                elif last.get("handoff"):
                     st.caption(t["simulated_handoff"])
                     st.info(t["pending_action"].format(action=last["handoff"]["unresolved"]))
+                    if st.button(t["create_ticket"], key="create_test_ticket", type="primary"):
+                        result = create_handoff_ticket(
+                            st.session_state.token, conversation, authority, repository, tickets,
+                            language=lang, fail_tool=st.session_state.get("simulate_error", False),
+                            fail_write=st.session_state.get("simulate_ticket_error", False),
+                        )
+                        if result.kind == "created":
+                            last["ticket_id"] = result.ticket_id
+                            last["handoff"] = result.packet
+                            last["case_view"] = result.case_view
+                            last["evidence"] = result.packet.get("source") or ""
+                            last["trace"] = tuple(last["trace"]) + result.trace
+                            last["plan"] = {"state": "ticket_created", "actions": ()}
+                            st.rerun()
+                        else:
+                            st.warning(result.text)
         with right:
             st.subheader(t["next_title"])
             with st.container(border=True):
@@ -450,13 +496,14 @@ with demo:
                     prompt = prompts["ambiguous"]
             with st.expander(t["advanced"]):
                 st.checkbox(t["fail"], key="simulate_error")
+                st.checkbox(t["fail_ticket"], key="simulate_ticket_error")
                 if st.button(t["expire"], key="expire_session"):
                     st.session_state.token = authority.issue(
                         profile, ACCOUNTS[profile][1], now=time.time() - 700, ttl=1,
                     )
                     st.rerun()
             if st.button(t["logout"], key="logout_session"):
-                for key in ("token", "profile", "conversation", "messages", "simulate_error"):
+                for key in ("token", "profile", "conversation", "messages", "simulate_error", "simulate_ticket_error"):
                     st.session_state.pop(key, None)
                 st.rerun()
 
@@ -469,9 +516,9 @@ with demo:
                 )
                 for code in last.get("trace", ()):
                     st.write(f'• {t["trace_labels"].get(code, code)}')
-                if last.get("handoff"):
+                if last.get("handoff") and (not last.get("ticket_id") or saved_ticket):
                     st.caption(t["handoff"])
-                    st.json(last["handoff"])
+                    st.json(saved_ticket if last.get("ticket_id") else last["handoff"])
         with st.expander(t["history"]):
             if not messages:
                 st.caption(t["history_empty"])
@@ -486,7 +533,7 @@ with demo:
                 fail_tool=st.session_state.get("simulate_error", False),
             )
             if reply.kind == "auth_required":
-                for key in ("token", "profile", "conversation", "messages", "simulate_error"):
+                for key in ("token", "profile", "conversation", "messages", "simulate_error", "simulate_ticket_error"):
                     st.session_state.pop(key, None)
                 st.session_state.login_notice = reply.text
                 st.rerun()

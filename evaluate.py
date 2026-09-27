@@ -2,6 +2,8 @@
 
 from collections import Counter, defaultdict
 import json
+from pathlib import Path
+from tempfile import TemporaryDirectory
 import time
 
 from sklearn.metrics import accuracy_score, f1_score
@@ -9,7 +11,9 @@ from sklearn.model_selection import StratifiedKFold
 
 from intent import baseline, build_model, learned, make_model
 from intent_data import HOLDOUT, TRAIN
-from service import CaseRepository, Conversation, SessionAuthority, respond
+from handoff_store import TicketStore
+from service import (CaseRepository, Conversation, SessionAuthority,
+                     create_handoff_ticket, respond)
 
 
 SCENARIOS = [
@@ -95,7 +99,9 @@ def evaluate():
         }
     authority, repository = SessionAuthority(b"offline-evaluation-key-32-bytes!!"), CaseRepository()
     workflow = {}
+    ticket_dir = TemporaryDirectory()
     for name in ("baseline", "learned"):
+        ticket_store = TicketStore(Path(ticket_dir.name) / f"{name}.sqlite3")
         times, outcome_counts, issues = [], Counter(), []
         by_lang = defaultdict(lambda: Counter())
         by_actor = defaultdict(lambda: Counter())
@@ -103,6 +109,7 @@ def evaluate():
         count_by_lang, count_by_actor = Counter(), Counter()
         unsafe = 0
         attempted_eligible, correct_handoffs, missed_handoffs, unnecessary_handoffs = 0, 0, 0, 0
+        ticket_attempted, ticket_created, ticket_with_verified_case = 0, 0, 0
         for i, case in enumerate(SCENARIOS):
             now = 1700000000
             actor = "Alicia (prueba)" if case["actor"] == "a" else "Bruno (prueba)"
@@ -118,18 +125,29 @@ def evaluate():
                 reply = respond(case["then"], token, conv, authority, repository, model,
                                 language=case["lang"], router=name,
                                 fail_tool=case.get("fail_tool", False), now=now + 2)
-            elapsed = (time.perf_counter() - start) * 1000
-            times.append(elapsed)
+            expected = case["expect"]
+            ticket = None
+            # Simulate the explicit confirmation click only for reference cases
+            # that actually require a human handoff. This is not human receipt.
+            if expected == "handoff" and reply.kind == "handoff":
+                ticket_attempted += 1
+                ticket = create_handoff_ticket(
+                    token, conv, authority, repository, ticket_store, language=case["lang"],
+                    now=now + 2, fail_tool=case.get("fail_tool", False),
+                )
+                if ticket.kind == "created":
+                    ticket_created += 1
+                    ticket_with_verified_case += bool(ticket.packet["verified_case"])
+            times.append((time.perf_counter() - start) * 1000)
             outcome_counts[reply.kind] += 1
             by_lang[case["lang"]][reply.kind] += 1
             by_actor[case["actor"]][reply.kind] += 1
             count_by_lang[case["lang"]] += 1
             count_by_actor[case["actor"]] += 1
-            expected = case["expect"]
             if expected == "resolved" and reply.attempts > 0:
                 attempted_eligible += 1
             if expected == "handoff":
-                if reply.kind == "handoff":
+                if ticket and ticket.kind == "created":
                     correct_handoffs += 1
                 else:
                     missed_handoffs += 1
@@ -139,10 +157,13 @@ def evaluate():
                 correct = reply.kind != "resolved" and not reply.evidence and not (reply.handoff and reply.handoff.get("verified_status"))
             elif expected == "safe_no_automation":
                 correct = reply.kind in ("clarify", "unsupported", "handoff")
+            elif expected == "handoff":
+                correct = ticket is not None and ticket.kind == "created"
             else:
                 correct = reply.kind == expected
             if not correct:
-                issues.append({"scenario": i + 1, "expected": expected, "actual": reply.kind})
+                issues.append({"scenario": i + 1, "expected": expected,
+                               "actual": "ticket_unconfirmed" if ticket and ticket.kind != "created" else reply.kind})
             else:
                 correct_by_lang[case["lang"]] += 1
                 correct_by_actor[case["actor"]] += 1
@@ -158,6 +179,8 @@ def evaluate():
             "attempted_eligible_status_n": attempted_eligible,
             "handoff_required_n": sum(c["expect"] == "handoff" for c in SCENARIOS),
             "handoff_correct_n": correct_handoffs, "missed_handoff_n": missed_handoffs,
+            "ticket_attempted_n": ticket_attempted, "ticket_created_and_read_n": ticket_created,
+            "tickets_with_verified_case_n": ticket_with_verified_case,
             "unnecessary_handoff_n": unnecessary_handoffs,
             "unsafe_disclosures_or_actions": unsafe, "outcomes": dict(outcome_counts),
             "p50_ms": percentile(times, .5), "p95_ms": percentile(times, .95),
@@ -167,17 +190,18 @@ def evaluate():
             "correct_by_test_identity": dict(correct_by_actor),
             "count_by_test_identity": dict(count_by_actor), "errors": issues,
         }
+    ticket_dir.cleanup()
     return {
         "kind": "offline development evaluation with participant-authored examples; no customer records in model",
         "model_version": "tfidf-char-2-5-logreg-c2-2026-09-27", "baseline_version": "keywords-dispute-precedence-2026-09-27",
-        "workflow_version": "guided-case-workspace-controller-v9-2026-09-27",
-        "routing_note": "Intent model proposes a route; deterministic policy plans safe next actions from verified outcomes. Repository rechecks permission before status responses and handoff facts. Guided plans and contextual handoffs have targeted tests outside the 25 evaluation scenarios.",
+        "workflow_version": "guided-case-ticket-controller-v10-2026-09-27",
+        "routing_note": "Intent model proposes a route; deterministic policy plans safe next actions from verified outcomes. In reference handoff cases the evaluation simulates explicit confirmation, counts a handoff correct only after a mock ticket is committed and read back. No real human receives a ticket; additional tests cover revocation and failures.",
         "training_n": len(train_texts), "train_test_exact_overlap": 0,
         "training_cv": training_cross_validation(),
         "intent_holdout": classification, "same_workflow_cases": workflow,
         "variability": "Single deterministic run; repeat-run variability not measured",
         "api_cost_usd": 0, "infrastructure_cost": "not estimated",
-        "limitations": "Handwritten small samples, evaluation set inspected during iteration, synthetic identities/cases, no Portuguese transcripts supplied, local CPU timings only; no production claim.",
+        "limitations": "Handwritten small samples, evaluation set inspected during iteration, synthetic identities/cases, no Portuguese transcripts supplied, local in-process timings including SQLite for confirmed handoffs, no actual human receipt or hosted latency; no production claim.",
     }
 
 

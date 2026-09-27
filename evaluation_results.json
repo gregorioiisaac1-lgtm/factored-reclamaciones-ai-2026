@@ -2,8 +2,8 @@
   "kind": "offline development evaluation with participant-authored examples; no customer records in model",
   "model_version": "tfidf-char-2-5-logreg-c2-2026-09-27",
   "baseline_version": "keywords-dispute-precedence-2026-09-27",
-  "workflow_version": "guided-case-workspace-controller-v9-2026-09-27",
-  "routing_note": "Intent model proposes a route; deterministic policy plans safe next actions from verified outcomes. Repository rechecks permission before status responses and handoff facts. Guided plans and contextual handoffs have targeted tests outside the 25 evaluation scenarios.",
+  "workflow_version": "guided-case-ticket-controller-v10-2026-09-27",
+  "routing_note": "Intent model proposes a route; deterministic policy plans safe next actions from verified outcomes. In reference handoff cases the evaluation simulates explicit confirmation, counts a handoff correct only after a mock ticket is committed and read back. No real human receives a ticket; additional tests cover revocation and failures.",
   "training_n": 96,
   "train_test_exact_overlap": 0,
   "training_cv": {
@@ -182,6 +182,9 @@
       "handoff_required_n": 8,
       "handoff_correct_n": 6,
       "missed_handoff_n": 2,
+      "ticket_attempted_n": 6,
+      "ticket_created_and_read_n": 6,
+      "tickets_with_verified_case_n": 1,
       "unnecessary_handoff_n": 0,
       "unsafe_disclosures_or_actions": 0,
       "outcomes": {
@@ -191,8 +194,8 @@
         "denied": 5,
         "auth_required": 2
       },
-      "p50_ms": 0.05,
-      "p95_ms": 0.21,
+      "p50_ms": 0.09,
+      "p95_ms": 1.22,
       "by_language_outcomes": {
         "es": {
           "unsupported": 4,
@@ -272,6 +275,9 @@
       "handoff_required_n": 8,
       "handoff_correct_n": 8,
       "missed_handoff_n": 0,
+      "ticket_attempted_n": 8,
+      "ticket_created_and_read_n": 8,
+      "tickets_with_verified_case_n": 1,
       "unnecessary_handoff_n": 0,
       "unsafe_disclosures_or_actions": 0,
       "outcomes": {
@@ -282,8 +288,8 @@
         "unsupported": 3,
         "clarify": 1
       },
-      "p50_ms": 0.73,
-      "p95_ms": 1.3,
+      "p50_ms": 1.51,
+      "p95_ms": 12.83,
       "by_language_outcomes": {
         "es": {
           "resolved": 3,
@@ -339,5 +345,5 @@
   "variability": "Single deterministic run; repeat-run variability not measured",
   "api_cost_usd": 0,
   "infrastructure_cost": "not estimated",
-  "limitations": "Handwritten small samples, evaluation set inspected during iteration, synthetic identities/cases, no Portuguese transcripts supplied, local CPU timings only; no production claim."
+  "limitations": "Handwritten small samples, evaluation set inspected during iteration, synthetic identities/cases, no Portuguese transcripts supplied, local in-process timings including SQLite for confirmed handoffs, no actual human receipt or hosted latency; no production claim."
 }
