@@ -1,6 +1,6 @@
 """Server-side mock identity, case ownership, workflow, and traceable outcomes.
 
-All records and PINs in this module are team-authored demo fixtures, never bank data.
+All records and PINs in this module are solo participant-authored demo fixtures, never bank data.
 """
 
 from dataclasses import dataclass, field
@@ -13,7 +13,7 @@ import re
 import secrets
 import time
 
-from intent import baseline, learned
+from intent import baseline, fold, learned
 
 
 AS_OF = "31/12/2025"
@@ -24,7 +24,8 @@ CASES = {
     "R-201": {"owner": "test-b", "status": "Escalado", "updated": "22/12/2025", "topic": "Cargo no reconocido"},
     "R-301": {"owner": "test-a", "status": "Dato inválido", "updated": "", "topic": "Cargo no reconocido"},
 }
-CASE_RE = re.compile(r"\bR-\d{3}\b", re.IGNORECASE)
+CASE_RE = re.compile(r"\bR[\s\-–]?\d{3}\b", re.IGNORECASE)
+SENSITIVE_NUMBER_RE = re.compile(r"(?<!\d)(?:\d[\s-]?){11,18}\d(?!\d)")
 
 
 class SessionError(Exception):
@@ -78,6 +79,9 @@ class CaseRepository:
 @dataclass
 class Conversation:
     waiting_for_case: bool = False
+    last_verified_case: str = ""
+    last_verified_status: str = ""
+    bound_subject: str = ""
     turns: list = field(default_factory=list)
 
 
@@ -90,10 +94,64 @@ class Reply:
     evidence: str = ""
     attempts: int = 0
     handoff: dict | None = None
+    trace: tuple[str, ...] = ()
+    case_view: dict | None = None
+    plan: dict | None = None
 
 
 def say(es, pt, language):
     return pt if language == "pt" else es
+
+
+def contains_sensitive_number(message):
+    """Catch likely account/card numbers before keeping or handing off demo text."""
+    return bool(SENSITIVE_NUMBER_RE.search(message))
+
+
+def _finish(reply, steps, *outcomes):
+    """Expose completed workflow steps, never hidden classifier reasoning."""
+    reply.trace = tuple(steps) + outcomes
+    if reply.kind == "resolved":
+        state = "in_progress" if reply.case_view["status"] == "En proceso" else "resolved_case"
+        actions = ("date", "reason", "human") if state == "in_progress" else ("date", "human")
+    elif reply.kind == "handoff":
+        state = f"handoff_{reply.handoff['reason']}"
+        actions = ()  # A handoff has already been prepared; no second handoff button.
+    elif reply.kind == "denied":
+        state, actions = "unavailable", ("human",)
+    elif reply.kind == "clarify":
+        state, actions = ("need_case" if "ask_case" in outcomes or "ask_one_case" in outcomes
+                          else "need_clarification"), ("human",)
+    else:
+        state, actions = "outside_scope", ("human",)
+    reply.plan = {"state": state, "actions": actions}
+    return reply
+
+
+def _forget_case(conversation):
+    conversation.last_verified_case = ""
+    conversation.last_verified_status = ""
+
+
+def _lookup_with_retries(repository, subject, case_id, fail_tool):
+    """Check ownership in the source on every use of a case, retrying tool errors once."""
+    for attempts in (1, 2):
+        try:
+            return repository.lookup(subject, case_id, fail=fail_tool), attempts, False
+        except ToolError:
+            pass
+    return None, 2, True
+
+
+def _usable_record(record):
+    return (record is not None and record.get("status") in ("En proceso", "Resuelto", "Escalado")
+            and bool(record.get("updated")))
+
+
+def _case_view(case_id, record):
+    """Produce a displayable case only from a validated, authorized source result."""
+    return {"case_id": case_id, "status": record["status"], "updated": record["updated"],
+            "source": f"mock-case:{case_id}", "snapshot_as_of": AS_OF}
 
 
 def respond(message, token, conversation, authority, repository, model, *, language="es", router="learned", fail_tool=False, now=None):
@@ -104,76 +162,169 @@ def respond(message, token, conversation, authority, repository, model, *, langu
         subject = authority.verify(token, now=now)
     except SessionError:
         return Reply("auth_required", say("Inicia una nueva sesión de prueba para continuar.",
-                                          "Inicie uma nova sessão de teste para continuar.", language))
+                                          "Inicie uma nova sessão de teste para continuar.", language),
+                     trace=("session_rejected",))
+    if conversation.bound_subject != subject:
+        conversation.waiting_for_case = False
+        conversation.turns.clear()
+        _forget_case(conversation)
+        conversation.bound_subject = subject
     if not message:
-        return Reply("clarify", say("Escribe tu consulta.", "Escreva sua solicitação.", language))
-    match = CASE_RE.search(message)
-    case_id = match.group().upper() if match else ""
-    # Route a short case number as a continuation of a prior status question.
-    if conversation.waiting_for_case and case_id and len(message) < 65:
-        intent = "status"
-    else:
-        intent = (learned(message, model) if router == "learned" else baseline(message))
+        return Reply("clarify", say("Escribe tu consulta.", "Escreva sua solicitação.", language),
+                     trace=("session_verified", "ask_question"))
+    if contains_sensitive_number(message):
+        return Reply("clarify", say(
+            "No escribas números de tarjeta o cuenta reales en esta demo. Vuelve a preguntar sin ellos.",
+            "Não informe números reais de cartão ou conta nesta demonstração. Pergunte novamente sem eles.",
+            language,
+        ), trace=("session_verified", "sensitive_input_blocked"))
+    case_ids = ["R-" + re.sub(r"\D", "", match.group()) for match in CASE_RE.finditer(message)]
+    case_id = case_ids[0] if case_ids else ""
+    normalized = fold(message)
+    date_requested = bool(re.search(r"\b(cuando|quando|fecha|data|actualiz\w*|atualiz\w*|ultima)\b", normalized))
+    reason_requested = bool(re.search(r"\b(por que|porque|motivo|razon|razao)\b", normalized))
+    new_case_requested = bool(re.search(r"\b(otro|otra|outro|outra|nuevo|nova)\b", normalized))
+    intent = (learned(message, model) if router == "learned" else baseline(message))
+    explicit = baseline(message)
+    # A request for a human or a new dispute takes precedence over prior status context.
+    if router == "learned" and explicit in ("human", "new_dispute"):
+        intent = explicit
+    using_context = False
+    if intent not in ("human", "new_dispute"):
+        if len(set(case_ids)) > 1:
+            intent = "status"
+        elif CASE_RE.fullmatch(message) or (conversation.waiting_for_case and case_id):
+            intent = "status"
+        elif case_id and (date_requested or reason_requested):
+            intent = "status"
+        elif (not case_id and conversation.last_verified_case and not new_case_requested
+              and (date_requested or reason_requested)):
+            case_id = conversation.last_verified_case
+            using_context = True
+            intent = "status"
+    steps = ["session_verified", f"route_{intent}"]
+    if using_context:
+        steps.append("case_from_context")
     conversation.turns.append({"role": "customer", "language": language, "text": message})
     if len(conversation.turns) > 12:
         conversation.turns = conversation.turns[-12:]
     if intent == "status":
+        if len(set(case_ids)) > 1:
+            conversation.waiting_for_case = True
+            _forget_case(conversation)
+            return _finish(Reply("clarify", say(
+                "Veo varios folios. Indica solo uno para consultar su estado.",
+                "Vejo vários protocolos. Informe apenas um para consultar o status.",
+                language,
+            ), intent), steps, "ask_one_case")
         if not case_id:
             conversation.waiting_for_case = True
-            return Reply("clarify", say("Indica el folio de tu reclamación (por ejemplo, R-101).",
-                                         "Informe o número da sua reclamação (por exemplo, R-101).", language), intent)
+            _forget_case(conversation)
+            return _finish(Reply("clarify", say("Indica el folio de tu reclamación (por ejemplo, R-101).",
+                                                  "Informe o número da sua reclamação (por exemplo, R-101).", language),
+                                 intent), steps, "ask_case")
         conversation.waiting_for_case = False
-        record = None
-        attempts = 0
-        for attempts in (1, 2):
-            try:
-                record = repository.lookup(subject, case_id, fail=fail_tool)
-                break
-            except ToolError:
-                pass
-        if record is None and attempts == 2 and fail_tool:
-            return _handoff("tool_failure", intent, subject, case_id, None, language, message, attempts)
+        _forget_case(conversation)
+        record, attempts, source_unavailable = _lookup_with_retries(
+            repository, subject, case_id, fail_tool,
+        )
+        if source_unavailable:
+            return _finish(_handoff("tool_failure", intent, subject, case_id, None,
+                                    language, message, attempts), steps, "lookup_failed", "human_handoff")
         if record is None:
-            return Reply("denied", say("No encuentro ese folio en tu sesión de prueba. Comprueba el número o solicita atención humana.",
-                                       "Não encontro esse protocolo na sua sessão de teste. Confira o número ou peça atendimento humano.", language),
-                         intent, attempts=attempts)
-        if record["status"] not in ("En proceso", "Resuelto", "Escalado") or not record["updated"]:
-            return _handoff("invalid_data", intent, subject, case_id, None, language, message, attempts)
+            return _finish(Reply("denied", say(
+                "No encuentro ese folio en tu sesión de prueba. Comprueba el número o solicita atención humana.",
+                "Não encontro esse protocolo na sua sessão de teste. Confira o número ou peça atendimento humano.",
+                language), intent, attempts=attempts), steps, "lookup_checked", "not_available")
+        if not _usable_record(record):
+            return _finish(_handoff("invalid_data", intent, subject, case_id, None,
+                                    language, message, attempts), steps, "lookup_checked", "human_handoff")
+        conversation.last_verified_case = case_id
+        conversation.last_verified_status = record["status"]
         if record["status"] == "Escalado":
-            return _handoff("escalated", intent, subject, case_id, record, language, message, attempts)
+            return _finish(_handoff("escalated", intent, subject, case_id, record,
+                                    language, message, attempts), steps, "lookup_checked", "human_handoff")
+        if reason_requested:
+            return _finish(_handoff("reason_unknown", intent, subject, case_id, record,
+                                    language, message, attempts), steps, "lookup_checked", "human_handoff")
         if language == "pt":
             status = {"En proceso": "Em andamento", "Resuelto": "Resolvido"}.get(record["status"], record["status"])
             body = f"No registro fictício {case_id}, o status era **{status}** em {record['updated']}. Fonte: sistema simulado de reclamações. Cópia de {AS_OF}; não é o estado atual de um banco."
         else:
             body = f"En el expediente ficticio {case_id}, el estado era **{record['status']}** al {record['updated']}. Fuente: sistema simulado de reclamaciones. Copia del {AS_OF}; no es el estado actual de un banco."
-        return Reply("resolved", body, intent, case_id, f"mock-case:{case_id}; updated={record['updated']}", attempts)
+        return _finish(Reply("resolved", body, intent, case_id,
+                             f"mock-case:{case_id}; updated={record['updated']}", attempts,
+                             case_view=_case_view(case_id, record)),
+                       steps, "lookup_checked", "snapshot_answered")
     conversation.waiting_for_case = False
-    if intent in ("human", "new_dispute"):
+    if intent == "human":
+        # A requested agent can receive the last case from this session, or one
+        # explicitly named by the customer, only after a fresh authorized lookup.
+        target = (case_id if len(set(case_ids)) == 1 else
+                  conversation.last_verified_case if not case_ids else "")
+        if target and not case_ids:
+            steps.append("case_from_context")
+        _forget_case(conversation)
+        if target:
+            record, attempts, source_unavailable = _lookup_with_retries(
+                repository, subject, target, fail_tool,
+            )
+            if source_unavailable:
+                return _finish(_handoff("tool_failure", intent, subject, target, None,
+                                        language, message, attempts), steps, "lookup_failed", "human_handoff")
+            if record is not None and not _usable_record(record):
+                return _finish(_handoff("invalid_data", intent, subject, target, None,
+                                        language, message, attempts), steps, "lookup_checked", "human_handoff")
+            return _finish(_handoff("requested", intent, subject, target, record,
+                                    language, message, attempts), steps, "lookup_checked", "human_handoff")
+        return _finish(_handoff("requested", intent, subject, "", None,
+                                language, message, 0), steps, "human_handoff")
+    _forget_case(conversation)
+    if intent == "new_dispute":
         # New disputes need a human; this prototype cannot create or reverse transactions.
-        return _handoff("new_dispute" if intent == "new_dispute" else "requested", intent,
-                        subject, "", None, language, message, 0)
+        return _finish(_handoff("new_dispute", intent, subject, "", None,
+                                language, message, 0), steps, "human_handoff")
     if intent == "unclear":
-        return Reply("clarify", say("¿Quieres consultar el estado de una reclamación, reportar un cargo o hablar con una persona?",
-                                    "Quer consultar o andamento de uma reclamação, contestar uma cobrança ou falar com uma pessoa?", language), intent)
-    return Reply("unsupported", say("Ese trámite no está disponible en esta demo. Pide atención humana si necesitas ayuda.",
-                                     "Esse serviço não está disponível nesta demonstração. Peça atendimento humano se precisar de ajuda.", language), intent)
+        return _finish(Reply("clarify", say(
+            "¿Quieres consultar el estado de una reclamación, reportar un cargo o hablar con una persona?",
+            "Quer consultar o andamento de uma reclamação, contestar uma cobrança ou falar com uma pessoa?",
+            language), intent), steps, "ask_question")
+    return _finish(Reply("unsupported", say(
+        "Ese trámite no está disponible en esta demo. Pide atención humana si necesitas ayuda.",
+        "Esse serviço não está disponível nesta demonstração. Peça atendimento humano se precisar de ajuda.",
+        language), intent), steps, "outside_scope")
 
 
 def _handoff(reason, intent, subject, case_id, record, language, message, attempts):
     questions = {
-        "tool_failure": "Verificar disponibilidad de la fuente y consultar el estado antes de informar al cliente",
-        "escalated": "Revisar el motivo de la escalación y comunicar el siguiente paso",
-        "new_dispute": "Confirmar los detalles del cargo y decidir la apertura del reclamo bajo política",
-        "requested": "Aclarar la solicitud concreta con el cliente",
-        "invalid_data": "Corregir el estado o la fecha de la fuente antes de informar al cliente",
+        "tool_failure": ("Verificar disponibilidad de la fuente y consultar el estado antes de informar al cliente",
+                         "Verificar a disponibilidade da fonte e consultar o status antes de informar o cliente"),
+        "escalated": ("Revisar el motivo de la escalación y comunicar el siguiente paso",
+                      "Revisar o motivo do encaminhamento e informar o próximo passo"),
+        "new_dispute": ("Confirmar los detalles del cargo y decidir la apertura del reclamo bajo política",
+                        "Confirmar os dados da cobrança e avaliar a abertura da reclamação conforme a política"),
+        "requested": ("Confirmar la ayuda requerida y el siguiente paso con el cliente",
+                      "Confirmar a ajuda necessária e o próximo passo com o cliente"),
+        "invalid_data": ("Corregir el estado o la fecha de la fuente antes de informar al cliente",
+                         "Corrigir o status ou a data da fonte antes de informar o cliente"),
+        "reason_unknown": ("Buscar el motivo documentado en un sistema autorizado antes de informar al cliente",
+                           "Buscar o motivo documentado em uma fonte autorizada antes de informar o cliente"),
     }
     packet = {"reason": reason, "test_subject": subject, "request": message[:180],
               "verified_case": case_id if record is not None else None,
               "verified_status": record["status"] if record is not None else None,
+              "verified_updated": record["updated"] if record is not None else None,
+              "snapshot_as_of": AS_OF if record is not None else None,
               "source": f"mock-case:{case_id}" if record is not None else None,
-              "actions": ["read_only_lookup"] if record is not None else [],
-              "unresolved": questions[reason]}
-    phrase = say("Preparé una derivación de prueba a un agente; no se creó ni modificó ninguna reclamación.",
-                 "Preparei um encaminhamento de teste para atendimento humano; nenhuma reclamação foi criada ou alterada.", language)
+              "actions": ["read_only_lookup"] if record is not None else
+                         ["lookup_attempted"] if attempts else [],
+              "unresolved": questions[reason][1 if language == "pt" else 0]}
+    if reason == "reason_unknown":
+        phrase = say("Verifiqué el estado y la fecha, pero la fuente no indica el motivo. Preparé una derivación de prueba; no se modificó ninguna reclamación.",
+                     "Confirmei o status e a data, mas a fonte não informa o motivo. Preparei um encaminhamento de teste; nenhuma reclamação foi alterada.", language)
+    else:
+        phrase = say("Preparé una derivación de prueba a un agente; no se creó ni modificó ninguna reclamación.",
+                     "Preparei um encaminhamento de teste para atendimento humano; nenhuma reclamação foi criada ou alterada.", language)
     return Reply("handoff", phrase, intent, case_id if record else "",
-                 packet["source"] or "", attempts, packet)
+                 packet["source"] or "", attempts, packet,
+                 case_view=_case_view(case_id, record) if record is not None else None)

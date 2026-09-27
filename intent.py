@@ -15,16 +15,20 @@ def fold(value):
                    if not unicodedata.combining(c))
 
 
+def build_model(ngrams=(2, 5), regularization=2):
+    return make_pipeline(
+        TfidfVectorizer(analyzer="char_wb", ngram_range=ngrams, strip_accents="unicode", sublinear_tf=True),
+        LogisticRegression(max_iter=1000, class_weight="balanced", C=regularization, random_state=42),
+    )
+
+
 def make_model():
     texts, labels = [], []
     for label, languages in TRAIN.items():
         for examples in languages.values():
             texts.extend(examples)
             labels.extend([label] * len(examples))
-    model = make_pipeline(
-        TfidfVectorizer(analyzer="char_wb", ngram_range=(3, 5), strip_accents="unicode", sublinear_tf=True),
-        LogisticRegression(max_iter=1000, class_weight="balanced", random_state=42),
-    )
+    model = build_model()
     return model.fit(texts, labels)
 
 
@@ -40,10 +44,10 @@ def learned(text, model):
 
 def baseline(text, model=None):
     t = fold(text)
-    if re.search(r"\b(asesor|agente|persona|humano|atendente|funcionario|representante|operador|especialista)\b", t):
-        return "human"
     if re.search(r"(no reconozco|nao reconheco|no autoric|nao autoriz|no hice|nao fiz|desconoz|desconhec|cobro indebido|cobranca indevida|fraud|disput|contestar)", t):
         return "new_dispute"
+    if re.search(r"\b(asesor|agente|persona|humano|atendente|funcionario|representante|operador|especialista)\b", t):
+        return "human"
     if re.search(r"(estado|status|reclam|reclamo|queja|protocolo|seguim|andamento|caso|atualiz|actualiz|resolv|respost|respuesta)", t):
         return "status"
     return "other"

@@ -1,9 +1,25 @@
 {
-  "kind": "offline simulation with team-authored training and holdout; no customer records in model",
-  "model_version": "tfidf-char-3-5-logreg-2026-09-27",
-  "baseline_version": "keywords-2026-09-27",
+  "kind": "offline development evaluation with participant-authored examples; no customer records in model",
+  "model_version": "tfidf-char-2-5-logreg-c2-2026-09-27",
+  "baseline_version": "keywords-dispute-precedence-2026-09-27",
+  "workflow_version": "guided-case-workspace-controller-v7-2026-09-27",
+  "routing_note": "Intent model proposes a route; deterministic policy plans safe next actions from verified outcomes. Repository rechecks permission before status responses and handoff facts. Guided plans and contextual handoffs have targeted tests outside the 25 evaluation scenarios.",
   "training_n": 96,
   "train_test_exact_overlap": 0,
+  "training_cv": {
+    "original_char_3_5_c1": {
+      "n_predictions": 288,
+      "correct": 147,
+      "wrong": 4,
+      "abstained": 137
+    },
+    "selected_char_2_5_c2": {
+      "n_predictions": 288,
+      "correct": 207,
+      "wrong": 10,
+      "abstained": 71
+    }
+  },
   "intent_holdout": {
     "keyword_baseline": {
       "n": 30,
@@ -102,11 +118,11 @@
     },
     "learned_router": {
       "n": 30,
-      "accuracy": 0.5,
-      "macro_f1": 0.611,
+      "accuracy": 0.733,
+      "macro_f1": 0.789,
       "correct_by_language": {
-        "es": 5,
-        "pt": 10
+        "es": 11,
+        "pt": 11
       },
       "count_by_language": {
         "es": 15,
@@ -114,22 +130,7 @@
       },
       "errors": [
         {
-          "index": 1,
-          "expected": "status",
-          "predicted": "unclear"
-        },
-        {
-          "index": 4,
-          "expected": "status",
-          "predicted": "unclear"
-        },
-        {
           "index": 5,
-          "expected": "status",
-          "predicted": "unclear"
-        },
-        {
-          "index": 6,
           "expected": "status",
           "predicted": "unclear"
         },
@@ -144,28 +145,8 @@
           "predicted": "unclear"
         },
         {
-          "index": 14,
-          "expected": "new_dispute",
-          "predicted": "unclear"
-        },
-        {
           "index": 17,
           "expected": "new_dispute",
-          "predicted": "unclear"
-        },
-        {
-          "index": 20,
-          "expected": "human",
-          "predicted": "unclear"
-        },
-        {
-          "index": 21,
-          "expected": "human",
-          "predicted": "unclear"
-        },
-        {
-          "index": 25,
-          "expected": "other",
           "predicted": "unclear"
         },
         {
@@ -210,8 +191,8 @@
         "denied": 5,
         "auth_required": 2
       },
-      "p50_ms": 0.01,
-      "p95_ms": 0.02,
+      "p50_ms": 0.03,
+      "p95_ms": 0.05,
       "by_language_outcomes": {
         "es": {
           "unsupported": 4,
@@ -243,6 +224,22 @@
           "auth_required": 1
         }
       },
+      "correct_by_language": {
+        "pt": 10,
+        "es": 11
+      },
+      "count_by_language": {
+        "es": 13,
+        "pt": 12
+      },
+      "correct_by_test_identity": {
+        "b": 8,
+        "a": 13
+      },
+      "count_by_test_identity": {
+        "a": 15,
+        "b": 10
+      },
       "errors": [
         {
           "scenario": 1,
@@ -268,7 +265,7 @@
     },
     "learned": {
       "n": 25,
-      "correct": 23,
+      "correct": 25,
       "safe_status_resolutions": 5,
       "eligible_status_n": 5,
       "attempted_eligible_status_n": 5,
@@ -279,29 +276,29 @@
       "unsafe_disclosures_or_actions": 0,
       "outcomes": {
         "resolved": 5,
-        "handoff": 8,
-        "denied": 4,
-        "clarify": 5,
+        "handoff": 9,
+        "denied": 5,
         "auth_required": 2,
-        "unsupported": 1
+        "unsupported": 3,
+        "clarify": 1
       },
-      "p50_ms": 0.31,
-      "p95_ms": 0.38,
+      "p50_ms": 0.42,
+      "p95_ms": 0.77,
       "by_language_outcomes": {
         "es": {
           "resolved": 3,
           "denied": 3,
           "handoff": 4,
           "auth_required": 1,
-          "clarify": 2
+          "unsupported": 1,
+          "clarify": 1
         },
         "pt": {
-          "handoff": 4,
+          "handoff": 5,
           "resolved": 2,
-          "clarify": 3,
-          "denied": 1,
+          "denied": 2,
           "auth_required": 1,
-          "unsupported": 1
+          "unsupported": 2
         }
       },
       "by_test_identity_outcomes": {
@@ -310,32 +307,37 @@
           "denied": 3,
           "handoff": 4,
           "auth_required": 1,
-          "clarify": 2
+          "unsupported": 1,
+          "clarify": 1
         },
         "b": {
-          "handoff": 4,
-          "clarify": 3,
-          "denied": 1,
+          "handoff": 5,
+          "denied": 2,
           "auth_required": 1,
-          "unsupported": 1
+          "unsupported": 2
         }
       },
-      "errors": [
-        {
-          "scenario": 8,
-          "expected": "denied",
-          "actual": "clarify"
-        },
-        {
-          "scenario": 22,
-          "expected": "unsupported",
-          "actual": "clarify"
-        }
-      ]
+      "correct_by_language": {
+        "es": 13,
+        "pt": 12
+      },
+      "count_by_language": {
+        "es": 13,
+        "pt": 12
+      },
+      "correct_by_test_identity": {
+        "a": 15,
+        "b": 10
+      },
+      "count_by_test_identity": {
+        "a": 15,
+        "b": 10
+      },
+      "errors": []
     }
   },
   "variability": "Single deterministic run; repeat-run variability not measured",
   "api_cost_usd": 0,
   "infrastructure_cost": "not estimated",
-  "limitations": "Handwritten small samples, synthetic identities/cases, no Portuguese transcripts supplied, local CPU timings only; no production claim."
+  "limitations": "Handwritten small samples, evaluation set inspected during iteration, synthetic identities/cases, no Portuguese transcripts supplied, local CPU timings only; no production claim."
 }

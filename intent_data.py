@@ -1,4 +1,4 @@
-"""Team-authored synthetic utterances; none come from the challenge transcripts.
+"""Participant-authored synthetic utterances; none come from the challenge transcripts.
 
 The held-out examples are separately written. They must not enter training.
 """
