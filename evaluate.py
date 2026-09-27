@@ -170,7 +170,7 @@ def evaluate():
     return {
         "kind": "offline development evaluation with participant-authored examples; no customer records in model",
         "model_version": "tfidf-char-2-5-logreg-c2-2026-09-27", "baseline_version": "keywords-dispute-precedence-2026-09-27",
-        "workflow_version": "guided-case-workspace-controller-v8-2026-09-27",
+        "workflow_version": "guided-case-workspace-controller-v9-2026-09-27",
         "routing_note": "Intent model proposes a route; deterministic policy plans safe next actions from verified outcomes. Repository rechecks permission before status responses and handoff facts. Guided plans and contextual handoffs have targeted tests outside the 25 evaluation scenarios.",
         "training_n": len(train_texts), "train_test_exact_overlap": 0,
         "training_cv": training_cross_validation(),

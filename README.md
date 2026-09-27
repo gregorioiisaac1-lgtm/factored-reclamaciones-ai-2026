@@ -18,7 +18,7 @@ Las otras pestañas muestran los agregados del reto, un gráfico de estados, la 
 base y las decisiones de seguridad. La interfaz se puede usar en español y portugués.
 
 1. Pulsa **«Empezar demo como Alicia»**. El campo de folio ya propone `R-101`:
-   pulsa «Consultar estado». Verás estado, fecha, fuente y copia de 2025.
+   pulsa «Consultar estado». Verás estado y fecha completos, fuente y copia de 2025.
    El panel «Tu siguiente paso» ofrece «Verificar fecha», «Preguntar por el motivo»
    y «Preparar derivación (demo)» según la respuesta autorizada. Cada acción vuelve
    al servicio para consultar el registro y sus permisos. Como el motivo no existe

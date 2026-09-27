@@ -3,7 +3,7 @@
 Esta actualización incluye la app, la evaluación y una guía al día. No necesitas
 instalar Python en Windows para probar la demo.
 
-1. Descomprime `Factored_actualizacion_v8.zip` y abre tu repositorio existente
+1. Descomprime `Factored_actualizacion_v9.zip` y abre tu repositorio existente
    [factored-reclamaciones-ai-2026](https://github.com/gregorioiisaac1-lgtm/factored-reclamaciones-ai-2026).
 2. Sube los archivos **que están dentro del ZIP**, todos a la raíz del repositorio,
    conservando sus nombres. Es un paquete completo: incluye `requirements.txt`,
@@ -16,7 +16,7 @@ instalar Python en Windows para probar la demo.
    con credenciales ni claves de AWS.
 3. Espera a que se actualice la [demo pública](https://factored-reclamaciones-ai-2026-cnvgspggr4zr78r9m2fteb.streamlit.app/).
    Pulsa «Empezar demo como Alicia». En «Mi expediente» ya estará escrito `R-101`:
-   pulsa «Consultar estado». Verás la tarjeta con estado, fecha y fuente; en «Tu siguiente
+   pulsa «Consultar estado». Verás estado y fecha completos, además de la fuente; en «Tu siguiente
    paso» pulsa «Verificar fecha», «Preguntar por el motivo» o «Preparar derivación
    (demo)». Las acciones consultan el servicio otra vez, con el permiso vigente.
 4. Para probar seguridad, como Alicia consulta `R-201`: la pantalla no mostrará

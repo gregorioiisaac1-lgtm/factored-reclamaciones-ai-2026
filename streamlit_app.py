@@ -404,9 +404,9 @@ with demo:
                     if lang == "pt":
                         state = {"En proceso": "Em andamento", "Resuelto": "Resolvido",
                                  "Escalado": "Encaminhado"}.get(state, state)
-                    state_col, date_col = st.columns(2)
-                    state_col.metric(t["status_label"], state)
-                    date_col.metric(t["date_label"], view["updated"])
+                    # Full-width rows keep dates and statuses readable on narrow screens.
+                    st.markdown(f'**{t["status_label"]}:** {state}')
+                    st.markdown(f'**{t["date_label"]}:** {view["updated"]}')
                     st.caption(t["snapshot_label"].format(
                         date=view["snapshot_as_of"], source=view["source"],
                     ))
