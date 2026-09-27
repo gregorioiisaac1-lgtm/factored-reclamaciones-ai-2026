@@ -17,16 +17,16 @@ para recorrer el flujo principal.
 Las otras pestañas muestran los agregados del reto, un gráfico de estados, la comparación con el método
 base y las decisiones de seguridad. La interfaz se puede usar en español y portugués.
 
-1. En la interfaz elige **Alicia (prueba)**, PIN `1379`, y pulsa
-   «Iniciar sesión de prueba». En «Mi expediente» escribe `R-101` y pulsa
-   «Consultar estado». Verás estado, fecha, fuente y copia de 2025.
+1. Pulsa **«Empezar demo como Alicia»**. El campo de folio ya propone `R-101`:
+   pulsa «Consultar estado». Verás estado, fecha, fuente y copia de 2025.
    El panel «Tu siguiente paso» ofrece «Verificar fecha», «Preguntar por el motivo»
    y «Preparar derivación (demo)» según la respuesta autorizada. Cada acción vuelve
    al servicio para consultar el registro y sus permisos. Como el motivo no existe
    en la fuente, esa pregunta prepara una derivación sin inventar un motivo.
    «Verificación y pasos ejecutados» muestra la traza y el paquete. El paquete
-   **no se envía** a un agente real. Prueba `R-102`, cambia a **Bruno (prueba)**
-   con PIN `2468` para `R-201` y vuelve a Alicia para consultar `R-201` sin permiso.
+   **no se envía** a un agente real. Prueba `R-102`; para entrar como **Bruno (prueba)**,
+   cierra la sesión y abre «Probar otro perfil con PIN público»; el PIN es `2468`
+   y su folio sugerido es `R-201`. Vuelve a Alicia para consultar `R-201` sin permiso.
 2. Abre «Simular errores» para provocar una caída de la fuente o vencer la sesión.
    Pulsa «No tengo el folio» y escribe `R-102` en el formulario; también puedes
    escribir `R-101 y R-201`: la app te exigirá elegir un solo folio.
@@ -38,7 +38,16 @@ base y las decisiones de seguridad. La interfaz se puede usar en español y port
 
 Los PIN son públicos para reproducir el demo. Este formulario representa un emisor
 de sesiones de prueba, **no** autenticación bancaria. El token firmado vence a los
-10 minutos; la consulta valida propiedad antes de retornar estado.
+10 minutos; la consulta valida propiedad antes de retornar estado. El acceso rápido
+también emite una sesión firmada para Alicia con las credenciales ficticias públicas;
+no demuestra verificación de identidad de clientes reales.
+
+El ZIP de entrega incluye los archivos de ejecución (`requirements.txt`, app,
+clasificador, servicio, ejemplos), los agregados (`analysis_evidence.json`),
+la evaluación, las pruebas y los scripts de auditoría. No incluye los ZIP con
+registros originales del organizador. Para comprobar que se puede ejecutar desde
+una extracción nueva, instala dependencias, ejecuta los comandos siguientes y
+selecciona `streamlit_app.py` como archivo principal al desplegar.
 
 ## Ejecutar localmente (opcional)
 
@@ -111,6 +120,8 @@ operativa en producción. Si un enrutador da peores resultados, se informa tal c
 La inferencia no llama API pagada; costo de API USD 0 y costo de hosting sin estimar.
 Las latencias reportadas solo miden el flujo local dentro del proceso Python; no
 incluyen red, navegador, arranque de la app ni concurrencia.
+La pestaña «Datos y resultados» muestra p50/p95 de esa única ejecución de 25
+escenarios por método; no es una medida de servicio alojado ni un ahorro en producción.
 
 En esta medición local: entrenamiento 96 ejemplos, evaluación exploratoria de intención
 con 30 ejemplos diferentes (15 ES y 15 PT). Acierto de intención: reglas 14/30,

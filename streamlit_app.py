@@ -25,6 +25,17 @@ def resources():
 
 
 authority, repository, model = resources()
+
+
+def activate_test_session(account, pin):
+    """Start a fresh, signed mock session using only the published demo fixtures."""
+    st.session_state.token = authority.issue(account, pin)
+    st.session_state.profile = account
+    st.session_state.conversation = Conversation()
+    st.session_state.messages = []
+    st.session_state.simulate_error = False
+
+
 COPY = {
     "es": {
         "title": "Tu reclamación, paso a paso",
@@ -35,6 +46,9 @@ COPY = {
         "intro": "Los perfiles y PIN son públicos y ficticios. No uses datos bancarios reales.",
         "profile": "Perfil ficticio", "pin": "PIN de prueba",
         "login": "Iniciar sesión de prueba", "bad_pin": "PIN incorrecto para ese perfil.",
+        "quick_login": "Empezar demo como Alicia",
+        "quick_note": "Acceso rápido con una identidad ficticia. La sesión firmada dura 10 minutos; no autentica clientes reales.",
+        "other_profile": "Probar otro perfil con PIN público",
         "session": "Sesión de prueba para {name} · duración máxima: 10 minutos.",
         "try": "Consulta guiada", "own": "Consultar mi folio",
         "flow_intro": "Primero comprobamos el folio y el permiso. Después mostramos solo hechos de la fuente y acciones posibles. La consulta es de solo lectura.",
@@ -126,6 +140,9 @@ COPY = {
         "workflow": "Flujos correctos", "escalation": "Derivaciones correctas",
         "automation": "Estados resueltos sin agente", "attempted": "Intentos en casos elegibles",
         "unsafe": "Divulgaciones indebidas observadas",
+        "latency_title": "Tiempo local de respuesta",
+        "p50": "p50 (ms)", "p95": "p95 (ms)",
+        "latency_note": "Una ejecución de 25 escenarios por método, dentro del mismo proceso. No incluye navegador, red ni arranque. API externa: USD 0 por caso; costo de alojamiento y operación no estimado.",
         "language_note": "El modelo acertó {es}/{total_es} frases en español y {pt}/{total_pt} en portugués. Cuando duda, pide aclaración. Estas cifras no permiten afirmar calidad para usuarios reales.",
         "subgroups": "Flujos correctos por idioma: español {es}/{total_es}, portugués {pt}/{total_pt}. Por perfil ficticio: Alicia {a}/{total_a}, Bruno {b}/{total_b}. Son grupos demasiado pequeños para evaluar equidad.",
         "cv_note": "Selección del modelo: 3 repeticiones de validación cruzada en las 96 frases de entrenamiento ({old}/{n} aciertos del anterior; {new}/{n} del actual). Son 288 predicciones de las mismas 96 frases, no 288 casos independientes. El conjunto de 30 frases ya se había inspeccionado en una versión anterior: evaluación exploratoria, no prueba ciega.",
@@ -150,6 +167,9 @@ COPY = {
         "intro": "Os perfis e PINs são públicos e fictícios. Não use dados bancários reais.",
         "profile": "Perfil fictício", "pin": "PIN de teste",
         "login": "Iniciar sessão de teste", "bad_pin": "PIN incorreto para este perfil.",
+        "quick_login": "Começar demonstração como Alicia",
+        "quick_note": "Acesso rápido com identidade fictícia. A sessão assinada dura 10 minutos; não autentica clientes reais.",
+        "other_profile": "Testar outro perfil com PIN público",
         "session": "Sessão de teste para {name} · duração máxima: 10 minutos.",
         "try": "Consulta guiada", "own": "Consultar meu protocolo",
         "flow_intro": "Primeiro verificamos o protocolo e a permissão. Depois mostramos apenas fatos da fonte e ações possíveis. A consulta é somente de leitura.",
@@ -241,6 +261,9 @@ COPY = {
         "workflow": "Fluxos corretos", "escalation": "Encaminhamentos corretos",
         "automation": "Status resolvidos sem atendente", "attempted": "Tentativas em casos elegíveis",
         "unsafe": "Divulgações indevidas observadas",
+        "latency_title": "Tempo local de resposta",
+        "p50": "p50 (ms)", "p95": "p95 (ms)",
+        "latency_note": "Uma execução de 25 cenários por método, no mesmo processo. Não inclui navegador, rede nem inicialização. API externa: USD 0 por caso; custo de hospedagem e operação não estimado.",
         "language_note": "O modelo acertou {es}/{total_es} frases em espanhol e {pt}/{total_pt} em português. Quando há dúvida, pede esclarecimento. Esses resultados não demonstram qualidade para clientes reais.",
         "subgroups": "Fluxos corretos por idioma: espanhol {es}/{total_es}, português {pt}/{total_pt}. Por perfil fictício: Alicia {a}/{total_a}, Bruno {b}/{total_b}. Os grupos são pequenos demais para avaliar equidade.",
         "cv_note": "Escolha do modelo: 3 repetições de validação cruzada nas 96 frases de treinamento ({old}/{n} acertos do anterior; {new}/{n} do atual). São 288 previsões das mesmas 96 frases, não 288 casos independentes. O conjunto de 30 frases já havia sido examinado em uma versão anterior: avaliação exploratória, não teste cego.",
@@ -306,22 +329,23 @@ with demo:
         st.caption(t["intro"])
         if st.session_state.get("login_notice"):
             st.warning(st.session_state.pop("login_notice"))
-        with st.form("login_form", clear_on_submit=True):
-            account = st.selectbox(t["profile"], list(ACCOUNTS))
-            st.caption("Alicia: 1379 · Bruno: 2468")
-            pin = st.text_input(t["pin"], type="password", max_chars=8)
-            submitted = st.form_submit_button(t["login"], type="primary")
-        if submitted:
-            try:
-                st.session_state.token = authority.issue(account, pin)
-            except SessionError:
-                st.error(t["bad_pin"])
-            else:
-                st.session_state.profile = account
-                st.session_state.conversation = Conversation()
-                st.session_state.messages = []
-                st.session_state.simulate_error = False
-                st.rerun()
+        if st.button(t["quick_login"], type="primary", use_container_width=True):
+            activate_test_session("Alicia (prueba)", ACCOUNTS["Alicia (prueba)"][1])
+            st.rerun()
+        st.caption(t["quick_note"])
+        with st.expander(t["other_profile"]):
+            with st.form("login_form", clear_on_submit=True):
+                account = st.selectbox(t["profile"], list(ACCOUNTS))
+                st.caption("Alicia: 1379 · Bruno: 2468")
+                pin = st.text_input(t["pin"], type="password", max_chars=8)
+                submitted = st.form_submit_button(t["login"])
+            if submitted:
+                try:
+                    activate_test_session(account, pin)
+                except SessionError:
+                    st.error(t["bad_pin"])
+                else:
+                    st.rerun()
     else:
         profile = st.session_state.get("profile", "Alicia (prueba)")
         alicia = profile == "Alicia (prueba)"
@@ -362,7 +386,9 @@ with demo:
             if conversation.waiting_for_case:
                 st.info(t["waiting_hint"])
             with st.form("case_lookup", clear_on_submit=True):
-                folio = st.text_input(t["folio_label"], placeholder="R-101", max_chars=30)
+                suggested_case = "R-101" if alicia else "R-201"
+                folio = st.text_input(t["folio_label"], value=suggested_case,
+                                      placeholder=suggested_case, max_chars=30)
                 check = st.form_submit_button(t["check"], type="primary", use_container_width=True)
             if check:
                 if folio.strip():
@@ -523,6 +549,14 @@ with data_tab:
     ]
     st.table([{t["metric"]: label, t["rules"]: baseline, t["learned"]: model_result}
               for label, baseline, model_result in rows])
+    st.subheader(t["latency_title"])
+    st.table([
+        {t["metric"]: t["p50"], t["rules"]: basic_flow["p50_ms"],
+         t["learned"]: learned_flow["p50_ms"]},
+        {t["metric"]: t["p95"], t["rules"]: basic_flow["p95_ms"],
+         t["learned"]: learned_flow["p95_ms"]},
+    ])
+    st.caption(t["latency_note"])
     st.info(t["language_note"].format(
         es=learned["correct_by_language"]["es"], pt=learned["correct_by_language"]["pt"],
         total_es=learned["count_by_language"]["es"], total_pt=learned["count_by_language"]["pt"],

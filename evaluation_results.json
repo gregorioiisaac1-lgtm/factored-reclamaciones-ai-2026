@@ -2,7 +2,7 @@
   "kind": "offline development evaluation with participant-authored examples; no customer records in model",
   "model_version": "tfidf-char-2-5-logreg-c2-2026-09-27",
   "baseline_version": "keywords-dispute-precedence-2026-09-27",
-  "workflow_version": "guided-case-workspace-controller-v7-2026-09-27",
+  "workflow_version": "guided-case-workspace-controller-v8-2026-09-27",
   "routing_note": "Intent model proposes a route; deterministic policy plans safe next actions from verified outcomes. Repository rechecks permission before status responses and handoff facts. Guided plans and contextual handoffs have targeted tests outside the 25 evaluation scenarios.",
   "training_n": 96,
   "train_test_exact_overlap": 0,
@@ -192,7 +192,7 @@
         "auth_required": 2
       },
       "p50_ms": 0.03,
-      "p95_ms": 0.05,
+      "p95_ms": 0.08,
       "by_language_outcomes": {
         "es": {
           "unsupported": 4,
@@ -282,8 +282,8 @@
         "unsupported": 3,
         "clarify": 1
       },
-      "p50_ms": 0.42,
-      "p95_ms": 0.77,
+      "p50_ms": 0.41,
+      "p95_ms": 1.28,
       "by_language_outcomes": {
         "es": {
           "resolved": 3,
