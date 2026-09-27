@@ -1,0 +1,62 @@
+{
+  "provenance": "organizer ZIPs; read locally; aggregate outputs only",
+  "interactions_2025": {
+    "rows": 229056,
+    "by_reason_category": {
+      "Queja": 39228,
+      "Transaccional": 79936,
+      "Producto": 50205,
+      "Comercial": 18411,
+      "Técnico": 34428,
+      "Retención": 6848
+    },
+    "requires_followup_by_reason": {
+      "Transaccional": 17609,
+      "Queja": 24582,
+      "Producto": 11914,
+      "Técnico": 13961,
+      "Comercial": 8197,
+      "Retención": 3410
+    }
+  },
+  "complaints_2025": {
+    "rows": 22356,
+    "missing_origin_interaction_id": 22356,
+    "by_subcategory": {
+      "Calidad de servicio": 3969,
+      "Sin dato": 2275,
+      "Cargo no reconocido": 4123,
+      "Cobro indebido": 3994,
+      "Atención en sucursal": 3977,
+      "Problema con app": 4018
+    },
+    "by_status": {
+      "In Process": 8962,
+      "Resolved": 4491,
+      "Escalated": 1149,
+      "Open": 6668,
+      "Rejected": 240,
+      "Closed": 846
+    }
+  },
+  "transcripts_jan_2025": {
+    "rows": 4903,
+    "distinct_customer_texts": 42,
+    "customer_text_mentions_saldo": 4903,
+    "customer_text_mentions_unrecognized_charge": 0,
+    "distinct_texts_used_across_multiple_topics": 42,
+    "two_most_frequent_texts_count": 2940,
+    "unjoined_to_interactions": 0,
+    "customer_id_mismatch": 0,
+    "topic_vs_interaction_category_mismatch": 0,
+    "by_main_topic": {
+      "Queja": 836,
+      "Transaccional": 1722,
+      "Producto": 1085,
+      "Técnico": 736,
+      "Comercial": 391,
+      "Retención": 133
+    }
+  },
+  "interpretation": "Transcript texts have very low variety and repeat across reason labels; do not train an intent classifier on these labels."
+}

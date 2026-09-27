@@ -1,0 +1,341 @@
+{
+  "kind": "offline simulation with team-authored training and holdout; no customer records in model",
+  "model_version": "tfidf-char-3-5-logreg-2026-09-27",
+  "baseline_version": "keywords-2026-09-27",
+  "training_n": 96,
+  "train_test_exact_overlap": 0,
+  "intent_holdout": {
+    "keyword_baseline": {
+      "n": 30,
+      "accuracy": 0.467,
+      "macro_f1": 0.49,
+      "correct_by_language": {
+        "es": 6,
+        "pt": 8
+      },
+      "count_by_language": {
+        "es": 15,
+        "pt": 15
+      },
+      "errors": [
+        {
+          "index": 1,
+          "expected": "status",
+          "predicted": "other"
+        },
+        {
+          "index": 2,
+          "expected": "status",
+          "predicted": "other"
+        },
+        {
+          "index": 4,
+          "expected": "status",
+          "predicted": "other"
+        },
+        {
+          "index": 5,
+          "expected": "status",
+          "predicted": "other"
+        },
+        {
+          "index": 6,
+          "expected": "status",
+          "predicted": "other"
+        },
+        {
+          "index": 8,
+          "expected": "status",
+          "predicted": "other"
+        },
+        {
+          "index": 9,
+          "expected": "status",
+          "predicted": "other"
+        },
+        {
+          "index": 10,
+          "expected": "status",
+          "predicted": "other"
+        },
+        {
+          "index": 13,
+          "expected": "new_dispute",
+          "predicted": "other"
+        },
+        {
+          "index": 15,
+          "expected": "new_dispute",
+          "predicted": "other"
+        },
+        {
+          "index": 18,
+          "expected": "new_dispute",
+          "predicted": "other"
+        },
+        {
+          "index": 19,
+          "expected": "human",
+          "predicted": "other"
+        },
+        {
+          "index": 20,
+          "expected": "human",
+          "predicted": "other"
+        },
+        {
+          "index": 21,
+          "expected": "human",
+          "predicted": "other"
+        },
+        {
+          "index": 23,
+          "expected": "human",
+          "predicted": "other"
+        },
+        {
+          "index": 27,
+          "expected": "other",
+          "predicted": "status"
+        }
+      ]
+    },
+    "learned_router": {
+      "n": 30,
+      "accuracy": 0.5,
+      "macro_f1": 0.611,
+      "correct_by_language": {
+        "es": 5,
+        "pt": 10
+      },
+      "count_by_language": {
+        "es": 15,
+        "pt": 15
+      },
+      "errors": [
+        {
+          "index": 1,
+          "expected": "status",
+          "predicted": "unclear"
+        },
+        {
+          "index": 4,
+          "expected": "status",
+          "predicted": "unclear"
+        },
+        {
+          "index": 5,
+          "expected": "status",
+          "predicted": "unclear"
+        },
+        {
+          "index": 6,
+          "expected": "status",
+          "predicted": "unclear"
+        },
+        {
+          "index": 8,
+          "expected": "status",
+          "predicted": "unclear"
+        },
+        {
+          "index": 13,
+          "expected": "new_dispute",
+          "predicted": "unclear"
+        },
+        {
+          "index": 14,
+          "expected": "new_dispute",
+          "predicted": "unclear"
+        },
+        {
+          "index": 17,
+          "expected": "new_dispute",
+          "predicted": "unclear"
+        },
+        {
+          "index": 20,
+          "expected": "human",
+          "predicted": "unclear"
+        },
+        {
+          "index": 21,
+          "expected": "human",
+          "predicted": "unclear"
+        },
+        {
+          "index": 25,
+          "expected": "other",
+          "predicted": "unclear"
+        },
+        {
+          "index": 26,
+          "expected": "other",
+          "predicted": "unclear"
+        },
+        {
+          "index": 27,
+          "expected": "other",
+          "predicted": "status"
+        },
+        {
+          "index": 28,
+          "expected": "other",
+          "predicted": "unclear"
+        },
+        {
+          "index": 30,
+          "expected": "other",
+          "predicted": "status"
+        }
+      ]
+    }
+  },
+  "same_workflow_cases": {
+    "baseline": {
+      "n": 25,
+      "correct": 21,
+      "safe_status_resolutions": 4,
+      "eligible_status_n": 5,
+      "attempted_eligible_status_n": 4,
+      "handoff_required_n": 8,
+      "handoff_correct_n": 6,
+      "missed_handoff_n": 2,
+      "unnecessary_handoff_n": 0,
+      "unsafe_disclosures_or_actions": 0,
+      "outcomes": {
+        "unsupported": 8,
+        "handoff": 6,
+        "resolved": 4,
+        "denied": 5,
+        "auth_required": 2
+      },
+      "p50_ms": 0.01,
+      "p95_ms": 0.02,
+      "by_language_outcomes": {
+        "es": {
+          "unsupported": 4,
+          "resolved": 2,
+          "denied": 3,
+          "handoff": 3,
+          "auth_required": 1
+        },
+        "pt": {
+          "handoff": 3,
+          "resolved": 2,
+          "denied": 2,
+          "unsupported": 4,
+          "auth_required": 1
+        }
+      },
+      "by_test_identity_outcomes": {
+        "a": {
+          "unsupported": 4,
+          "resolved": 4,
+          "denied": 3,
+          "handoff": 3,
+          "auth_required": 1
+        },
+        "b": {
+          "handoff": 3,
+          "denied": 2,
+          "unsupported": 4,
+          "auth_required": 1
+        }
+      },
+      "errors": [
+        {
+          "scenario": 1,
+          "expected": "resolved",
+          "actual": "unsupported"
+        },
+        {
+          "scenario": 10,
+          "expected": "denied",
+          "actual": "unsupported"
+        },
+        {
+          "scenario": 20,
+          "expected": "handoff",
+          "actual": "unsupported"
+        },
+        {
+          "scenario": 21,
+          "expected": "handoff",
+          "actual": "unsupported"
+        }
+      ]
+    },
+    "learned": {
+      "n": 25,
+      "correct": 23,
+      "safe_status_resolutions": 5,
+      "eligible_status_n": 5,
+      "attempted_eligible_status_n": 5,
+      "handoff_required_n": 8,
+      "handoff_correct_n": 8,
+      "missed_handoff_n": 0,
+      "unnecessary_handoff_n": 0,
+      "unsafe_disclosures_or_actions": 0,
+      "outcomes": {
+        "resolved": 5,
+        "handoff": 8,
+        "denied": 4,
+        "clarify": 5,
+        "auth_required": 2,
+        "unsupported": 1
+      },
+      "p50_ms": 0.31,
+      "p95_ms": 0.38,
+      "by_language_outcomes": {
+        "es": {
+          "resolved": 3,
+          "denied": 3,
+          "handoff": 4,
+          "auth_required": 1,
+          "clarify": 2
+        },
+        "pt": {
+          "handoff": 4,
+          "resolved": 2,
+          "clarify": 3,
+          "denied": 1,
+          "auth_required": 1,
+          "unsupported": 1
+        }
+      },
+      "by_test_identity_outcomes": {
+        "a": {
+          "resolved": 5,
+          "denied": 3,
+          "handoff": 4,
+          "auth_required": 1,
+          "clarify": 2
+        },
+        "b": {
+          "handoff": 4,
+          "clarify": 3,
+          "denied": 1,
+          "auth_required": 1,
+          "unsupported": 1
+        }
+      },
+      "errors": [
+        {
+          "scenario": 8,
+          "expected": "denied",
+          "actual": "clarify"
+        },
+        {
+          "scenario": 22,
+          "expected": "unsupported",
+          "actual": "clarify"
+        }
+      ]
+    }
+  },
+  "variability": "Single deterministic run; repeat-run variability not measured",
+  "api_cost_usd": 0,
+  "infrastructure_cost": "not estimated",
+  "limitations": "Handwritten small samples, synthetic identities/cases, no Portuguese transcripts supplied, local CPU timings only; no production claim."
+}
