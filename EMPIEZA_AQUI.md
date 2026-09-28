@@ -1,20 +1,20 @@
 # Tu siguiente paso, Isaac
 
-Esta actualización incluye la app, la evaluación y una guía al día. No necesitas
+Esta actualización incluye la app, la evaluación sintética nueva y una guía al día. No necesitas
 instalar Python en Windows para probar la demo.
 
-1. Descomprime `Factored_actualizacion_v10.zip` y abre tu repositorio existente
-   [factored-reclamaciones-ai-2026](https://github.com/gregorioiisaac1-lgtm/factored-reclamaciones-ai-2026).
-2. Sube los archivos **que están dentro del ZIP**, todos a la raíz del repositorio,
+1. Descomprime `Factored_actualizacion_v11.zip`. Para cumplir el nombre pedido,
+   crea otro repositorio **público** llamado
+   `factored-hackathon-2026-isaac-gregorio`. Mantén el repositorio y la app
+   actuales mientras preparas y compruebas la nueva entrega.
+2. Sube los archivos **que están dentro del ZIP**, todos a la raíz del nuevo repositorio,
    conservando sus nombres. Es un paquete completo: incluye `requirements.txt`,
-   `analysis_evidence.json`, código, pruebas y documentación. Si GitHub avisa que
-   alguno ya existe, súbelo con el mismo nombre para actualizarlo.
-   **No borres el README.md anterior**: el nuevo lleva el mismo nombre y GitHub
-   conserva las versiones en el historial. Si el sitio no permite cargar archivos
-   que ya existen, no los renombres: abre cada archivo en GitHub, usa el lápiz de
-   edición y pega el contenido de la versión nueva. No subas ZIP de datos, PDF
-   con credenciales ni claves de AWS.
-3. Espera a que se actualice la [demo pública](https://factored-reclamaciones-ai-2026-cnvgspggr4zr78r9m2fteb.streamlit.app/).
+   `analysis_evidence.json`, código, pruebas y documentación. No subas ZIP de
+   datos, PDF con credenciales ni claves de AWS.
+3. En Streamlit Community Cloud, despliega **una app nueva** desde el repositorio
+   nuevo, rama `main`, archivo `streamlit_app.py`. La
+   [demo anterior](https://factored-reclamaciones-ai-2026-cnvgspggr4zr78r9m2fteb.streamlit.app/)
+   queda como respaldo. Una vez lista la nueva, comprueba el recorrido:
    Pulsa «Empezar demo como Alicia». En «Mi expediente» ya estará escrito `R-101`:
    pulsa «Consultar estado». Verás estado y fecha completos, además de la fuente; en «Tu siguiente
    paso» pulsa «Preparar derivación (demo)» y después confirma con
@@ -42,19 +42,24 @@ el enrutador local y otras 30 para probarlo.
 de derivación se simula la confirmación y se exige guardar y leer un ticket
 de prueba; ninguna persona real lo recibe. Cero divulgaciones indebidas
 observadas en solo 25 escenarios; no implica seguridad demostrada a escala.
-Las frases de evaluación ya se inspeccionaron durante el desarrollo: hace falta
-un conjunto nuevo e independiente para medir la calidad real.
+Las frases de esa evaluación ya se inspeccionaron durante el desarrollo. La
+prueba adicional `synthetic_eval_cases_v11.json`, escrita por IA y etiquetada
+antes de ejecutarse, encontró **35/40** intenciones y **14/18** flujos correctos
+con el modelo, frente a **30/40** y **12/18** con las reglas. Hubo cuatro fallos de
+flujo con el modelo. No lo ajustamos después de verlos. Tampoco esta muestra
+es una evaluación humana independiente; hace falta para medir calidad real.
 
 **Lo que aún falta antes de operar en un banco:** identidad real, permisos de una
 fuente autorizada y actual, prueba nueva con preguntas de otras personas en ES/PT,
 medición del tiempo y costo con red y hosting, y auditoría y retención protegidas.
 Esta versión es una demo con datos ficticios, no un servicio bancario conectado.
 
-**Entrega pendiente según el kickoff:** tu repositorio actual no sigue el nombre
-pedido `factored-hackathon-2026-[nombre-del-equipo]`. Antes de enviar, adapta
-ese nombre y revisa que la app desplegada siga funcionando. También necesitarás
-presentación de **4 a 6 diapositivas** y **video corto obligatorio**, junto con
-el enlace público al repositorio y el enlace de la app.
+**Entrega según el kickoff:** el repositorio nuevo debe seguir el nombre pedido
+`factored-hackathon-2026-[nombre-del-equipo]`; incluye el enlace público del
+repositorio y el de la app nueva. La presentación de **seis diapositivas** y el
+**video corto con subtítulos** están separados del ZIP de código, junto con un
+guion para narrar el video. No renombres directamente el repositorio de la app
+actual: Streamlit puede perder acceso de administración a ese despliegue.
 
 Para las diapositivas, sugiero cinco partes: (1) problema y cifras, (2) fallo de
 calidad en las transcripciones, (3) flujo con sesión y autorización por expediente,

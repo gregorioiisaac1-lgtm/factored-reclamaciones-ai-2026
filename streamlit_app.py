@@ -37,6 +37,7 @@ def activate_test_session(account, pin):
     st.session_state.messages = []
     st.session_state.simulate_error = False
     st.session_state.simulate_ticket_error = False
+    st.session_state.case_folio = "R-101" if account == "Alicia (prueba)" else "R-201"
 
 
 COPY = {
@@ -157,6 +158,10 @@ COPY = {
         "subgroups": "Flujos correctos por idioma: español {es}/{total_es}, portugués {pt}/{total_pt}. Por perfil ficticio: Alicia {a}/{total_a}, Bruno {b}/{total_b}. Son grupos demasiado pequeños para evaluar equidad.",
         "cv_note": "Selección del modelo: 3 repeticiones de validación cruzada en las 96 frases de entrenamiento ({old}/{n} aciertos del anterior; {new}/{n} del actual). Son 288 predicciones de las mismas 96 frases, no 288 casos independientes. El conjunto de 30 frases ya se había inspeccionado en una versión anterior: evaluación exploratoria, no prueba ciega.",
         "limits": "Muestras pequeñas escritas por un solo autor; sin registros de clientes en la app. Latencia medida localmente; costo de API USD 0, alojamiento sin estimar. Cero fallas observadas no significa riesgo cero.",
+        "fresh_title": "Prueba sintética adicional con preguntas nuevas",
+        "fresh_note": "40 preguntas (20 ES y 20 PT) y 18 flujos etiquetados por IA antes de ejecutarlos; ninguna frase coincide exactamente con el entrenamiento o la evaluación anterior. Es una prueba sintética nueva, no una muestra humana independiente. No cambiamos el modelo después de ver los resultados.",
+        "fresh_errors": "Errores observados en los 18 flujos del modelo",
+        "fresh_limits": "Los errores cuentan como errores aunque el sistema haya pedido aclaración de forma segura. La prueba detectó cero divulgaciones indebidas en sus casos de seguridad, pero su tamaño no demuestra ausencia de riesgo. La latencia es local y la cola de tickets no llega a un agente real.",
         "design": "Cuatro decisiones de diseño",
         "steps": [
             ("01 · Sesión", "Un emisor ficticio firma un token que vence en 10 minutos. El PIN público reproduce la demo; no autentica a un cliente bancario."),
@@ -285,6 +290,10 @@ COPY = {
         "subgroups": "Fluxos corretos por idioma: espanhol {es}/{total_es}, português {pt}/{total_pt}. Por perfil fictício: Alicia {a}/{total_a}, Bruno {b}/{total_b}. Os grupos são pequenos demais para avaliar equidade.",
         "cv_note": "Escolha do modelo: 3 repetições de validação cruzada nas 96 frases de treinamento ({old}/{n} acertos do anterior; {new}/{n} do atual). São 288 previsões das mesmas 96 frases, não 288 casos independentes. O conjunto de 30 frases já havia sido examinado em uma versão anterior: avaliação exploratória, não teste cego.",
         "limits": "Amostras pequenas escritas por um só autor; sem dados de clientes no app. Latência medida localmente; custo de API USD 0, hospedagem não estimada. Nenhuma falha observada não significa risco zero.",
+        "fresh_title": "Teste sintético adicional com perguntas novas",
+        "fresh_note": "40 perguntas (20 ES e 20 PT) e 18 fluxos rotulados por IA antes da execução; nenhuma frase coincide exatamente com o treinamento ou a avaliação anterior. É um teste sintético novo, não uma amostra humana independente. O modelo não foi alterado após a análise dos resultados.",
+        "fresh_errors": "Erros observados nos 18 fluxos do modelo",
+        "fresh_limits": "Os erros contam como erros mesmo quando o sistema pediu esclarecimentos de modo seguro. O teste não detectou divulgação indevida nos casos de segurança, mas a amostra não prova ausência de risco. A latência é local e a fila de tickets não chega a um atendente real.",
         "design": "Quatro decisões de projeto",
         "steps": [
             ("01 · Sessão", "Um emissor fictício assina um token que expira em 10 minutos. O PIN público reproduz a demonstração; não autentica um cliente bancário."),
@@ -337,7 +346,7 @@ with demo:
         try:
             authority.verify(st.session_state.token)
         except SessionError:
-            for key in ("token", "profile", "conversation", "messages", "simulate_error", "simulate_ticket_error"):
+            for key in ("token", "profile", "conversation", "messages", "simulate_error", "simulate_ticket_error", "case_folio"):
                 st.session_state.pop(key, None)
             st.session_state.login_notice = t["expired"]
             st.rerun()
@@ -409,9 +418,9 @@ with demo:
             st.caption(t["folio_help"].format(cases="R-101, R-102" if alicia else "R-201"))
             if conversation.waiting_for_case:
                 st.info(t["waiting_hint"])
-            with st.form("case_lookup", clear_on_submit=True):
+            with st.form("case_lookup", clear_on_submit=False):
                 suggested_case = "R-101" if alicia else "R-201"
-                folio = st.text_input(t["folio_label"], value=suggested_case,
+                folio = st.text_input(t["folio_label"], key="case_folio",
                                       placeholder=suggested_case, max_chars=30)
                 check = st.form_submit_button(t["check"], type="primary", use_container_width=True)
             if check:
@@ -503,7 +512,7 @@ with demo:
                     )
                     st.rerun()
             if st.button(t["logout"], key="logout_session"):
-                for key in ("token", "profile", "conversation", "messages", "simulate_error", "simulate_ticket_error"):
+                for key in ("token", "profile", "conversation", "messages", "simulate_error", "simulate_ticket_error", "case_folio"):
                     st.session_state.pop(key, None)
                 st.rerun()
 
@@ -533,7 +542,7 @@ with demo:
                 fail_tool=st.session_state.get("simulate_error", False),
             )
             if reply.kind == "auth_required":
-                for key in ("token", "profile", "conversation", "messages", "simulate_error", "simulate_ticket_error"):
+                for key in ("token", "profile", "conversation", "messages", "simulate_error", "simulate_ticket_error", "case_folio"):
                     st.session_state.pop(key, None)
                 st.session_state.login_notice = reply.text
                 st.rerun()
@@ -623,6 +632,20 @@ with data_tab:
     st.caption(t["cv_note"].format(old=cv_original["correct"], new=cv_selected["correct"],
                                    n=cv_selected["n_predictions"]))
     st.caption(t["limits"])
+    fresh_path = folder / "synthetic_eval_results_v11.json"
+    if fresh_path.exists():
+        fresh = json.loads(fresh_path.read_text(encoding="utf-8"))
+        st.subheader(t["fresh_title"])
+        st.write(t["fresh_note"])
+        st.table([
+            {t["metric"]: t["accuracy"], t["rules"]: f'{fresh["intents"]["rules"]["correct"]}/40',
+             t["learned"]: f'{fresh["intents"]["learned"]["correct"]}/40'},
+            {t["metric"]: t["workflow"], t["rules"]: f'{fresh["workflow"]["baseline"]["correct"]}/18',
+             t["learned"]: f'{fresh["workflow"]["learned"]["correct"]}/18'},
+        ])
+        st.caption(t["fresh_limits"])
+        with st.expander(t["fresh_errors"]):
+            st.table(fresh["workflow"]["learned"]["errors"])
 
 with design_tab:
     st.subheader(t["design"])

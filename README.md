@@ -61,6 +61,7 @@ selecciona `streamlit_app.py` como archivo principal al desplegar.
 python -m pip install -r requirements.txt
 streamlit run streamlit_app.py
 python evaluate.py
+python evaluate_synthetic_v11.py
 python -m unittest test_security.py test_handoff_ticket.py
 python update_fixture.py
 ```
@@ -158,6 +159,38 @@ intención correcta esperada **antes** de probarlas, registrar también los fall
 separar los resultados por idioma. No añadir esas preguntas al entrenamiento hasta
 cerrar la medición. Si se cambia el modelo después, usar otro conjunto nuevo.
 
+### Prueba sintética adicional, versión 11
+
+`synthetic_eval_cases_v11.json` fija 40 preguntas nuevas (20 ES, 20 PT; cinco por
+intención en cada idioma) y 18 escenarios de flujo antes de ejecutarlos. Codex
+escribió las frases y sus etiquetas; **no** proceden de clientes ni de evaluadores
+humanos independientes. `evaluate_synthetic_v11.py` exige que el conjunto conserve
+SHA-256 `cf274e0fd14fcd33c1d9cce940727dd4a81635436e82f321984226c0c84b51ea`
+y comprueba que las frases no se repitan exactamente en entrenamiento ni en la
+evaluación anterior. Esto no elimina parecidos de significado. No ajustamos
+el modelo después de observar esta prueba; los errores quedan en
+`synthetic_eval_results_v11.json` y en la pestaña «Datos y resultados».
+
+| Resultado sintético local | Reglas | Modelo actual |
+| --- | ---: | ---: |
+| Intenciones estrictamente correctas | 30/40 | 35/40 |
+| Flujos completos correctos | 12/18 | 14/18 |
+| Derivaciones exigidas con ticket guardado y leído | 2/4 | 4/4 |
+| Divulgaciones o acciones indebidas detectadas en los casos de seguridad | 0 | 0 |
+
+El modelo acertó 17/20 intenciones ES y 18/20 PT. En el flujo acertó 7/9 ES y
+7/9 PT. **Cuatro fallos completos**: `WF-01` y `WF-05` pidieron aclaración donde
+esperábamos una consulta de estado y una denegación, `WF-16` pidió aclaración para
+un tema fuera de alcance y `WF-18` derivó una consulta que debía resolverse tras
+aclarar el folio. Se cuentan como fallos aunque no hayan filtrado información.
+Además, una consulta sobre tarifa de cajero se confundió con disputa y una
+pregunta portuguesa sobre actualización de domicilio se confundió con estado;
+son fallos de intención que deben revisarse con nuevos ejemplos humanos.
+Los p50/p95 del flujo del modelo en esta corrida fueron 0,95/2,14 ms **solo
+dentro del proceso local**; no representan tiempo del navegador ni costo de hosting.
+La prueba anterior de 25 escenarios es exploratoria y permanece visible por
+transparencia. Ninguna de las dos pruebas mide rendimiento en clientes reales.
+
 ## Camino a operación
 
 Conectar un IdP real, obtener licencia y política del dato, permisos institucionales,
@@ -191,5 +224,9 @@ SQLite cuando se confirmó un ticket.
 El kickoff pide un repositorio público llamado `factored-hackathon-2026-[nombre-del-equipo]`,
 enlace a la app desplegada, presentación de **4 a 6 diapositivas** y **video breve
 obligatorio**. El repositorio de trabajo actual tiene un nombre diferente; conviene
-adaptarlo antes de entregar y volver a comprobar el despliegue después del cambio.
+preparar un repositorio con el nombre requerido y desplegarlo antes de entregar.
+Streamlit Community Cloud vincula cada app con el nombre exacto del repositorio;
+renombrar directamente el repositorio actual sin preparar el despliegue puede
+hacer que se pierda la administración de la app publicada. Comprobar el nuevo
+enlace y el recorrido completo antes de sustituir el antiguo.
 Una demo funcional y pruebas honestas ayudan, pero no garantizan ganar.

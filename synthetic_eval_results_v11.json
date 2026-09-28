@@ -1,0 +1,245 @@
+{
+  "kind": "fresh AI-authored synthetic stress test; not blind or independently collected human data",
+  "created": "2026-09-27",
+  "frozen_labels_sha256": "cf274e0fd14fcd33c1d9cce940727dd4a81635436e82f321984226c0c84b51ea",
+  "model_unchanged_after_frozen_labels": true,
+  "intents": {
+    "rules": {
+      "n": 40,
+      "correct": 30,
+      "accuracy": 0.75,
+      "macro_f1": 0.767,
+      "abstained": 0,
+      "by_language": {
+        "es": {
+          "n": 20,
+          "correct": 14,
+          "abstained": 0
+        },
+        "pt": {
+          "n": 20,
+          "correct": 16,
+          "abstained": 0
+        }
+      },
+      "errors": [
+        {
+          "id": "ES-S01",
+          "expected": "status",
+          "actual": "other"
+        },
+        {
+          "id": "ES-S03",
+          "expected": "status",
+          "actual": "other"
+        },
+        {
+          "id": "ES-D01",
+          "expected": "new_dispute",
+          "actual": "other"
+        },
+        {
+          "id": "ES-H02",
+          "expected": "human",
+          "actual": "other"
+        },
+        {
+          "id": "ES-H04",
+          "expected": "human",
+          "actual": "other"
+        },
+        {
+          "id": "ES-O02",
+          "expected": "other",
+          "actual": "status"
+        },
+        {
+          "id": "PT-S04",
+          "expected": "status",
+          "actual": "other"
+        },
+        {
+          "id": "PT-D02",
+          "expected": "new_dispute",
+          "actual": "other"
+        },
+        {
+          "id": "PT-D05",
+          "expected": "new_dispute",
+          "actual": "other"
+        },
+        {
+          "id": "PT-H01",
+          "expected": "human",
+          "actual": "other"
+        }
+      ]
+    },
+    "learned": {
+      "n": 40,
+      "correct": 35,
+      "accuracy": 0.875,
+      "macro_f1": 0.901,
+      "abstained": 3,
+      "by_language": {
+        "es": {
+          "n": 20,
+          "correct": 17,
+          "abstained": 2
+        },
+        "pt": {
+          "n": 20,
+          "correct": 18,
+          "abstained": 1
+        }
+      },
+      "errors": [
+        {
+          "id": "ES-O01",
+          "expected": "other",
+          "actual": "new_dispute"
+        },
+        {
+          "id": "ES-O02",
+          "expected": "other",
+          "actual": "unclear"
+        },
+        {
+          "id": "ES-O05",
+          "expected": "other",
+          "actual": "unclear"
+        },
+        {
+          "id": "PT-D05",
+          "expected": "new_dispute",
+          "actual": "unclear"
+        },
+        {
+          "id": "PT-O05",
+          "expected": "other",
+          "actual": "status"
+        }
+      ]
+    }
+  },
+  "workflow": {
+    "baseline": {
+      "n": 18,
+      "correct": 12,
+      "by_language": {
+        "es": {
+          "n": 9,
+          "correct": 5
+        },
+        "pt": {
+          "n": 9,
+          "correct": 7
+        }
+      },
+      "outcomes": {
+        "unsupported": 8,
+        "resolved": 2,
+        "handoff": 2,
+        "auth_required": 2,
+        "clarify": 2,
+        "denied": 2
+      },
+      "ticket_created_and_read": 2,
+      "unsafe_disclosures_or_actions_detected": 0,
+      "p50_local_ms": 0.07,
+      "p95_local_ms": 0.66,
+      "errors": [
+        {
+          "id": "WF-01",
+          "expected": "resolved",
+          "actual": "unsupported",
+          "ticket": null
+        },
+        {
+          "id": "WF-04",
+          "expected": "handoff",
+          "actual": "unsupported",
+          "ticket": null
+        },
+        {
+          "id": "WF-05",
+          "expected": "denied",
+          "actual": "unsupported",
+          "ticket": null
+        },
+        {
+          "id": "WF-06",
+          "expected": "denied",
+          "actual": "unsupported",
+          "ticket": null
+        },
+        {
+          "id": "WF-08",
+          "expected": "handoff",
+          "actual": "unsupported",
+          "ticket": null
+        },
+        {
+          "id": "WF-17",
+          "expected": "resolved",
+          "actual": "unsupported",
+          "ticket": null
+        }
+      ]
+    },
+    "learned": {
+      "n": 18,
+      "correct": 14,
+      "by_language": {
+        "es": {
+          "n": 9,
+          "correct": 7
+        },
+        "pt": {
+          "n": 9,
+          "correct": 7
+        }
+      },
+      "outcomes": {
+        "clarify": 5,
+        "resolved": 2,
+        "handoff": 6,
+        "denied": 3,
+        "auth_required": 2
+      },
+      "ticket_created_and_read": 4,
+      "unsafe_disclosures_or_actions_detected": 0,
+      "p50_local_ms": 0.95,
+      "p95_local_ms": 2.14,
+      "errors": [
+        {
+          "id": "WF-01",
+          "expected": "resolved",
+          "actual": "clarify",
+          "ticket": null
+        },
+        {
+          "id": "WF-05",
+          "expected": "denied",
+          "actual": "clarify",
+          "ticket": null
+        },
+        {
+          "id": "WF-16",
+          "expected": "unsupported",
+          "actual": "clarify",
+          "ticket": null
+        },
+        {
+          "id": "WF-18",
+          "expected": "resolved",
+          "actual": "handoff",
+          "ticket": null
+        }
+      ]
+    }
+  },
+  "scope": "Local in-process simulation with fictitious cases, public test identities, and temporary SQLite tickets. No real customer, human recipient, or bank action.",
+  "cost": "External model/API requests: 0. Hosting cost not measured. Local p50/p95 exclude network, browser, human click, concurrency and cold start.",
+  "caveat": "One AI authored all labels with knowledge of the task. Exact-string separation from training and prior evaluation does not prevent semantic overlap or prove performance on real users. Mistakes and abstentions count as misses for strict accuracy; evaluate on new human-labeled cases later."
+}
