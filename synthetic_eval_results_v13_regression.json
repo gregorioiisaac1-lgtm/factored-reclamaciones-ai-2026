@@ -1,0 +1,198 @@
+{
+  "kind": "retrospective development regression on the frozen v11 AI-authored cases",
+  "created": "2026-09-28",
+  "frozen_labels_sha256": "cf274e0fd14fcd33c1d9cce940727dd4a81635436e82f321984226c0c84b51ea",
+  "model_unchanged_after_frozen_labels": true,
+  "controller_changed_after_inspecting_v11": true,
+  "intents": {
+    "rules": {
+      "n": 40,
+      "correct": 30,
+      "accuracy": 0.75,
+      "macro_f1": 0.767,
+      "abstained": 0,
+      "by_language": {
+        "es": {
+          "n": 20,
+          "correct": 14,
+          "abstained": 0
+        },
+        "pt": {
+          "n": 20,
+          "correct": 16,
+          "abstained": 0
+        }
+      },
+      "errors": [
+        {
+          "id": "ES-S01",
+          "expected": "status",
+          "actual": "other"
+        },
+        {
+          "id": "ES-S03",
+          "expected": "status",
+          "actual": "other"
+        },
+        {
+          "id": "ES-D01",
+          "expected": "new_dispute",
+          "actual": "other"
+        },
+        {
+          "id": "ES-H02",
+          "expected": "human",
+          "actual": "other"
+        },
+        {
+          "id": "ES-H04",
+          "expected": "human",
+          "actual": "other"
+        },
+        {
+          "id": "ES-O02",
+          "expected": "other",
+          "actual": "status"
+        },
+        {
+          "id": "PT-S04",
+          "expected": "status",
+          "actual": "other"
+        },
+        {
+          "id": "PT-D02",
+          "expected": "new_dispute",
+          "actual": "other"
+        },
+        {
+          "id": "PT-D05",
+          "expected": "new_dispute",
+          "actual": "other"
+        },
+        {
+          "id": "PT-H01",
+          "expected": "human",
+          "actual": "other"
+        }
+      ]
+    },
+    "learned": {
+      "n": 40,
+      "correct": 35,
+      "accuracy": 0.875,
+      "macro_f1": 0.901,
+      "abstained": 3,
+      "by_language": {
+        "es": {
+          "n": 20,
+          "correct": 17,
+          "abstained": 2
+        },
+        "pt": {
+          "n": 20,
+          "correct": 18,
+          "abstained": 1
+        }
+      },
+      "errors": [
+        {
+          "id": "ES-O01",
+          "expected": "other",
+          "actual": "new_dispute"
+        },
+        {
+          "id": "ES-O02",
+          "expected": "other",
+          "actual": "unclear"
+        },
+        {
+          "id": "ES-O05",
+          "expected": "other",
+          "actual": "unclear"
+        },
+        {
+          "id": "PT-D05",
+          "expected": "new_dispute",
+          "actual": "unclear"
+        },
+        {
+          "id": "PT-O05",
+          "expected": "other",
+          "actual": "status"
+        }
+      ]
+    }
+  },
+  "workflow": {
+    "baseline": {
+      "n": 18,
+      "correct": 16,
+      "by_language": {
+        "es": {
+          "n": 9,
+          "correct": 8
+        },
+        "pt": {
+          "n": 9,
+          "correct": 8
+        }
+      },
+      "outcomes": {
+        "resolved": 3,
+        "handoff": 4,
+        "denied": 4,
+        "unsupported": 3,
+        "auth_required": 2,
+        "clarify": 2
+      },
+      "ticket_created_and_read": 3,
+      "unsafe_disclosures_or_actions_detected": 0,
+      "p50_local_ms": 0.06,
+      "p95_local_ms": 0.67,
+      "errors": [
+        {
+          "id": "WF-08",
+          "expected": "handoff",
+          "actual": "unsupported",
+          "ticket": null
+        },
+        {
+          "id": "WF-17",
+          "expected": "resolved",
+          "actual": "unsupported",
+          "ticket": null
+        }
+      ]
+    },
+    "learned": {
+      "n": 18,
+      "correct": 18,
+      "by_language": {
+        "es": {
+          "n": 9,
+          "correct": 9
+        },
+        "pt": {
+          "n": 9,
+          "correct": 9
+        }
+      },
+      "outcomes": {
+        "resolved": 4,
+        "handoff": 5,
+        "denied": 4,
+        "auth_required": 2,
+        "clarify": 2,
+        "unsupported": 1
+      },
+      "ticket_created_and_read": 4,
+      "unsafe_disclosures_or_actions_detected": 0,
+      "p50_local_ms": 0.05,
+      "p95_local_ms": 0.68,
+      "errors": []
+    }
+  },
+  "scope": "Local in-process simulation with fictitious cases, public test identities, and temporary SQLite tickets. No real customer, human recipient, or bank action.",
+  "cost": "External model/API requests: 0. Hosting cost not measured. Local p50/p95 exclude network, browser, human click, concurrency and cold start.",
+  "caveat": "One AI authored the cases and labels. The model is unchanged, but the controller was changed after the v11 and v12 errors were inspected, including the four named WF failures. This same-set rerun is a development regression, not independent evidence of improvement. Mistakes and abstentions count as misses; obtain new human-labeled cases for an independent test."
+}

@@ -33,13 +33,21 @@ def make_model():
 
 
 def learned(text, model):
+    return learned_with_score(text, model)[0]
+
+
+def learned_with_score(text: str, model: object) -> tuple[str, float]:
+    """Expose the actual top class probability from one local inference.
+
+    This is a classifier score, not calibrated confidence or permission.
+    """
     scores = model.predict_proba([text])[0]
     ranking = sorted(zip(model.classes_, scores), key=lambda pair: pair[1], reverse=True)
     top, second = ranking[:2]
     # Local development policy; uncertainty is explicitly routed for clarification.
     if top[1] < 0.34 or top[1] - second[1] < 0.055:
-        return "unclear"
-    return top[0]
+        return "unclear", float(top[1])
+    return str(top[0]), float(top[1])
 
 
 def baseline(text, model=None):

@@ -4,12 +4,14 @@ from html import escape
 from datetime import datetime, timezone
 import json
 from pathlib import Path
+import re
 import time
 
 import streamlit as st
 
-from intent import make_model
+from intent import fold, make_model
 from handoff_store import TicketStore, TicketStoreError
+from routing import extract_references
 from service import (ACCOUNTS, CaseRepository, Conversation, SessionAuthority, SessionError,
                      contains_sensitive_number, create_handoff_ticket, read_handoff_ticket,
                      read_handoff_review, respond, review_handoff_ticket, reviewer_inbox)
@@ -19,7 +21,7 @@ st.set_page_config(
     page_title="Estado de reclamaciones | Factored demo",
     page_icon="🔎",
     layout="wide",
-    initial_sidebar_state="collapsed",
+    initial_sidebar_state="expanded",
 )
 
 
@@ -40,13 +42,16 @@ def activate_test_session(account, pin):
     st.session_state.simulate_error = False
     st.session_state.simulate_ticket_error = False
     st.session_state.case_folio = "R-101" if account == "Alicia (prueba)" else "R-201"
+    st.session_state.agent_events = []
+    st.session_state.session_metrics = {"calls": 0, "latency_ms": 0.0}
+    st.session_state.session_expired = False
 
 
 COPY = {
     "es": {
         "title": "Tu reclamación, paso a paso",
         "subtitle": "Consulta un folio de prueba, revisa qué se verificó y elige el siguiente paso.",
-        "tag": "Prototipo v12 · expedientes ficticios · copia de 2025",
+        "tag": "Prototipo v14 · expedientes ficticios · copia de 2025",
         "tabs": ["Mi expediente", "Mesa de revisión", "Datos y resultados", "Cómo funciona"],
         "start": "Comienza con un perfil de prueba",
         "intro": "Los perfiles y PIN son públicos y ficticios. No uses datos bancarios reales.",
@@ -131,7 +136,7 @@ COPY = {
             "ticket_saved": "Guardó un ticket de prueba", "ticket_read_back": "Comprobó el ticket en la cola de prueba",
             "outside_scope": "Informó que el trámite no está disponible",
         },
-        "kind_labels": {"resolved": "Consulta resuelta", "handoff": "Derivación simulada",
+        "kind_labels": {"resolved": "Consulta resuelta", "ticket_status": "Ticket verificado", "handoff": "Derivación simulada",
                         "denied": "No disponible", "clarify": "Falta aclaración",
                         "unsupported": "Fuera de alcance", "auth_required": "Nueva sesión requerida"},
         "none": "sin datos del expediente",
@@ -165,8 +170,8 @@ COPY = {
         "fresh_note": "Resultado histórico v11: 40 preguntas (20 ES, 20 PT) y 18 flujos etiquetados por IA antes de su primera ejecución. Es una prueba sintética, no una muestra humana independiente. El controlador v12 se corrigió después de analizar estos errores.",
         "fresh_errors": "Errores observados en los 18 flujos del modelo",
         "fresh_limits": "Los errores cuentan como errores aunque el sistema haya pedido aclaración de forma segura. La prueba detectó cero divulgaciones indebidas en sus casos de seguridad, pero su tamaño no demuestra ausencia de riesgo. La latencia es local y la cola de tickets no llega a un agente real.",
-        "regression_title": "Regresión de desarrollo v12 · mismos casos",
-        "regression_note": "Repetimos 40 preguntas y 18 flujos tras ajustar el controlador. Esto detecta regresiones; no es un conjunto nuevo ni evidencia independiente de mejora. La mesa del analista tiene pruebas específicas aparte.",
+        "regression_title": "Regresión de desarrollo v13 · mismos casos",
+        "regression_note": "Repetimos 40 preguntas y 18 flujos ya inspeccionados tras ajustar el controlador. Esto detecta regresiones; no es un conjunto nuevo ni evidencia independiente de mejora. La mesa del analista tiene pruebas específicas aparte.",
         "design": "Cuatro decisiones de diseño",
         "steps": [
             ("01 · Sesión", "Un emisor ficticio firma un token que vence en 10 minutos. El PIN público reproduce la demo; no autentica a un cliente bancario."),
@@ -194,7 +199,7 @@ COPY = {
     "pt": {
         "title": "Sua reclamação, passo a passo",
         "subtitle": "Consulte um protocolo de teste, veja o que foi verificado e escolha o próximo passo.",
-        "tag": "Protótipo v12 · registros fictícios · cópia de 2025",
+        "tag": "Protótipo v14 · registros fictícios · cópia de 2025",
         "tabs": ["Meu protocolo", "Mesa de revisão", "Dados e resultados", "Como funciona"],
         "start": "Comece com um perfil de teste",
         "intro": "Os perfis e PINs são públicos e fictícios. Não use dados bancários reais.",
@@ -279,7 +284,7 @@ COPY = {
             "ticket_saved": "Salvou um ticket de teste", "ticket_read_back": "Confirmou o ticket na fila de teste",
             "outside_scope": "Informou que o serviço não está disponível",
         },
-        "kind_labels": {"resolved": "Consulta resolvida", "handoff": "Encaminhamento simulado",
+        "kind_labels": {"resolved": "Consulta resolvida", "ticket_status": "Ticket confirmado", "handoff": "Encaminhamento simulado",
                         "denied": "Não disponível", "clarify": "Precisa esclarecer",
                         "unsupported": "Fora do escopo", "auth_required": "Nova sessão necessária"},
         "none": "sem dados do protocolo",
@@ -313,8 +318,8 @@ COPY = {
         "fresh_note": "Resultado histórico v11: 40 perguntas (20 ES, 20 PT) e 18 fluxos rotulados por IA antes da primeira execução. É um teste sintético, não uma amostra humana independente. O controlador v12 foi corrigido após a análise desses erros.",
         "fresh_errors": "Erros observados nos 18 fluxos do modelo",
         "fresh_limits": "Os erros contam como erros mesmo quando o sistema pediu esclarecimentos de modo seguro. O teste não detectou divulgação indevida nos casos de segurança, mas a amostra não prova ausência de risco. A latência é local e a fila de tickets não chega a um atendente real.",
-        "regression_title": "Regressão de desenvolvimento v12 · mesmos casos",
-        "regression_note": "Repetimos 40 perguntas e 18 fluxos depois de ajustar o controlador. Isto detecta regressões; não é um conjunto novo nem evidência independente de melhora. A mesa do analista tem testes específicos separados.",
+        "regression_title": "Regressão de desenvolvimento v13 · mesmos casos",
+        "regression_note": "Repetimos 40 perguntas e 18 fluxos já inspecionados após ajustar o controlador. Isto detecta regressões; não é um conjunto novo nem evidência independente de melhora. A mesa do analista tem testes específicos separados.",
         "design": "Quatro decisões de projeto",
         "steps": [
             ("01 · Sessão", "Um emissor fictício assina um token que expira em 10 minutos. O PIN público reproduz a demonstração; não autentica um cliente bancário."),
@@ -340,274 +345,466 @@ COPY = {
         },
     },
 }
+UI_COPY = {
+    "es": {
+        "tabs": ["Cliente", "Agent Trace / Observability", "Mesa de revisión", "Datos y resultados", "Diseño y límites"],
+        "title": "Reclamaciones con respuestas verificables",
+        "subtitle": "Consulta un expediente ficticio, comprueba los permisos y sigue cada decisión del agente.",
+        "badge": "DEMO v14 · ES / PT · COPIA 2025",
+        "profile": "Identidad simulada", "profiles": {
+            "Alicia (prueba)": "Alicia · titular de R-101 y R-102",
+            "Bruno (prueba)": "Bruno · no titular de R-101 (tiene R-201)",
+        },
+        "session": "Sesión de {name} · identidad ficticia con token firmado",
+        "hint": "Escribe un folio, pregunta por una reclamación o prueba una derivación. Nunca uses datos reales.",
+        "own": "Mi folio", "foreign": "Folio ajeno", "missing": "Sin folio",
+        "human": "Solicitar agente", "dispute": "Reportar cargo",
+        "chat_placeholder": "Escribe tu consulta: ¿Cómo va R-101?",
+        "chat_welcome": "Soy el asistente de esta demo. Puedo consultar un folio ficticio, preparar una disputa o pedir atención humana de prueba.",
+        "verified": "Estado verificado", "blocked": "Acceso denegado · 403",
+        "snapshot": "Copia del {date} · {source}. No es un estado bancario en vivo.",
+        "next": "Siguiente paso", "ready": "Consulta un folio o usa una de las pruebas rápidas.",
+        "request_handoff": "Confirmar derivación", "handoff_hint": "Preparado para la cola de prueba. Solo se guarda tras confirmar.",
+        "saved": "Ticket confirmado: {id}", "expired_ticket": "No pude releer el ticket; puede haber caducado o cambiado la fuente.",
+        "review_received": "Un analista ficticio confirmó recepción de prueba.",
+        "reset": "Reiniciar sesión ficticia", "expired": "La sesión de prueba venció; reiníciala para seguir.",
+        "simulations": "Pruebas de fallas", "fail_source": "Simular caída de fuente", "fail_ticket": "Simular fallo al guardar",
+        "privacy": "Los perfiles y PIN son públicos. Esta demo no autentica clientes reales ni opera en un banco.",
+        "trace_title": "Inspección de la última ejecución", "trace_empty": "Envía una consulta en Cliente para ver la traza.",
+        "trace_scope": "La traza muestra hechos autorizados y entradas mínimas; no incluye tokens de sesión ni el chat íntegro.",
+        "language": "Idioma detectado", "response_lang": "Idioma de respuesta", "intent": "Intención",
+        "route": "Método de ruta", "score": "Score del modelo", "score_na": "No aplica: decisión determinista",
+        "score_note": "La probabilidad del clasificador local no está calibrada y no concede permisos.",
+        "language_note": "Score de idioma: proporción de pistas léxicas, no probabilidad calibrada. Si no hay pistas se usa el selector.",
+        "security": "Middleware / RBAC", "tool": "Ejecución de herramienta", "payload_in": "Entrada mínima",
+        "payload_out": "Salida verificada o fallo seguro", "not_called": "No se llamó ninguna herramienta en este paso.",
+        "verified_step": "Verificación", "escalation": "Ticket de derivación para revisión humana (simulada)",
+        "metrics": "Métricas de esta sesión", "tokens": "Tokens de LLM externo", "cost": "Costo API (USD)",
+        "latency": "Último servicio (ms)", "calls": "Ejecuciones",
+        "metrics_note": "Modelo TF-IDF local: sin tokens de LLM ni llamadas de API. Latencia local medida alrededor del servicio; excluye animación, navegador, red y hosting.",
+        "history": "Ejecuciones recientes", "status_labels": {
+            "allowed": "Permiso validado", "forbidden": "403 · acceso denegado",
+            "unknown": "No se consultó un expediente", "unavailable": "Fuente no disponible",
+            "checked": "Consulta completada; datos no válidos",
+        },
+        "phase": {"understand": "Entender", "decide": "Decidir", "act": "Actuar",
+                  "verify": "Verificar", "escalate": "Escalar"},
+    },
+    "pt": {
+        "tabs": ["Cliente", "Agent Trace / Observability", "Mesa de revisão", "Dados e resultados", "Design e limites"],
+        "title": "Reclamações com respostas verificáveis",
+        "subtitle": "Consulte um registro fictício, confira permissões e acompanhe cada decisão do agente.",
+        "badge": "DEMONSTRAÇÃO v14 · ES / PT · CÓPIA 2025",
+        "profile": "Identidade simulada", "profiles": {
+            "Alicia (prueba)": "Alicia · titular de R-101 e R-102",
+            "Bruno (prueba)": "Bruno · não titular de R-101 (tem R-201)",
+        },
+        "session": "Sessão de {name} · identidade fictícia com token assinado",
+        "hint": "Informe um protocolo, pergunte sobre uma reclamação ou teste um encaminhamento. Nunca use dados reais.",
+        "own": "Meu protocolo", "foreign": "Protocolo alheio", "missing": "Sem protocolo",
+        "human": "Pedir atendente", "dispute": "Contestar cobrança",
+        "chat_placeholder": "Escreva sua pergunta: Como vai R-101?",
+        "chat_welcome": "Sou o assistente desta demonstração. Posso consultar um protocolo fictício, preparar uma contestação ou solicitar atendimento humano de teste.",
+        "verified": "Status confirmado", "blocked": "Acesso negado · 403",
+        "snapshot": "Cópia de {date} · {source}. Não é o status atual de um banco.",
+        "next": "Próximo passo", "ready": "Consulte um protocolo ou use uma das opções de teste.",
+        "request_handoff": "Confirmar encaminhamento", "handoff_hint": "Pronto para a fila de teste. Só será salvo após sua confirmação.",
+        "saved": "Ticket confirmado: {id}", "expired_ticket": "Não consegui reler o ticket; ele pode ter expirado ou a fonte pode ter mudado.",
+        "review_received": "Um analista fictício confirmou o recebimento de teste.",
+        "reset": "Reiniciar sessão fictícia", "expired": "A sessão de teste expirou; reinicie para continuar.",
+        "simulations": "Testes de falha", "fail_source": "Simular falha da fonte", "fail_ticket": "Simular falha ao salvar",
+        "privacy": "Os perfis e PINs são públicos. Esta demonstração não autentica clientes reais nem opera em um banco.",
+        "trace_title": "Inspeção da última execução", "trace_empty": "Envie uma pergunta em Cliente para ver o rastreamento.",
+        "trace_scope": "O rastreamento mostra fatos autorizados e entradas mínimas; não inclui tokens de sessão nem a conversa completa.",
+        "language": "Idioma detectado", "response_lang": "Idioma da resposta", "intent": "Intenção",
+        "route": "Método de decisão", "score": "Score do modelo", "score_na": "Não se aplica: decisão determinística",
+        "score_note": "A probabilidade do classificador local não é calibrada e não concede permissões.",
+        "language_note": "Score do idioma: proporção de pistas lexicais, não probabilidade calibrada. Na ausência de pistas, usa o seletor.",
+        "security": "Middleware / RBAC", "tool": "Execução da ferramenta", "payload_in": "Entrada mínima",
+        "payload_out": "Saída confirmada ou falha segura", "not_called": "Nenhuma ferramenta foi chamada nesta etapa.",
+        "verified_step": "Verificação", "escalation": "Ticket para revisão humana (simulada)",
+        "metrics": "Métricas desta sessão", "tokens": "Tokens de LLM externo", "cost": "Custo API (USD)",
+        "latency": "Último serviço (ms)", "calls": "Execuções",
+        "metrics_note": "Modelo TF-IDF local: sem tokens de LLM ou chamadas de API. Latência local medida ao redor do serviço; exclui animação, navegador, rede e hospedagem.",
+        "history": "Execuções recentes", "status_labels": {
+            "allowed": "Permissão confirmada", "forbidden": "403 · acesso negado",
+            "unknown": "Nenhum protocolo consultado", "unavailable": "Fonte indisponível",
+            "checked": "Consulta concluída; dados inválidos",
+        },
+        "phase": {"understand": "Entender", "decide": "Decidir", "act": "Agir",
+                  "verify": "Verificar", "escalate": "Encaminhar"},
+    },
+}
+
+
+def detect_language_evidence(message: str, selected: str) -> dict:
+    """A transparent lexical hint; the explicit selector controls reply language."""
+    normalized = fold(message)
+    es = len(re.findall(r"\b(quiero|podrias|decirme|donde|como|cual|cuando|folio|"
+                        r"reclamacion|tramite|cargo|hablar|agente|tarjeta|estado)\b", normalized))
+    pt = len(re.findall(r"\b(onde|posso|tenho|minha|meu|voce|qual|quando|"
+                        r"reclamacao|cobranca|cartao|atendente|falar|conferir|andamento)\b", normalized))
+    detected = "pt" if pt > es else "es" if es > pt else selected
+    return {"detected": detected, "source": "lexical" if es != pt else "selector",
+            "score": round(max(es, pt) / (es + pt), 3) if es + pt and es != pt else None,
+            "response_language": selected}
+
+
+def stream_verified_text(message: str):
+    """Stream only the already computed and authorized reply for presentation."""
+    for part in re.findall(r"\S+\s*", message):
+        yield part
+        time.sleep(0.006)
+
+
+def observe_reply(reply, prompt: str, conversation: Conversation, language: str,
+                  latency_ms: float) -> dict:
+    """Build display telemetry from actual service results, with no raw transcript."""
+    route = conversation.last_route or {"intent": reply.intent or None,
+                                        "source": None, "confidence": None}
+    refs = extract_references(prompt[:600])
+    reference = refs[0].identifier if len(refs) == 1 else None
+    if not reference:
+        reference = reply.case_id or (reply.handoff or {}).get("verified_case")
+    trace = tuple(reply.trace)
+    called = any(step in trace for step in ("lookup_checked", "lookup_failed", "ticket_read_back"))
+    if reply.kind == "denied":
+        security = "forbidden"
+        output = reply.error
+    elif "lookup_failed" in trace:
+        security = "unavailable"
+        output = {"code": "SOURCE_UNAVAILABLE", "verified_facts": {}}
+    elif reply.case_view is not None or reply.kind == "ticket_status":
+        security = "allowed"
+        output = reply.case_view or {"ticket_id": reference, "committed_readback": True}
+    elif "lookup_checked" in trace:
+        security = "checked"
+        output = {"verified_facts": (reply.handoff or {}).get("verified_facts", {})}
+    else:
+        security = "unknown"
+        output = None
+    tool = "TicketStore.read" if reply.kind == "ticket_status" else "CaseRepository.lookup" if called else None
+    verified = (reply.case_view is not None or "ticket_read_back" in trace)
+    language_hint = detect_language_evidence(prompt, language)
+    return {
+        "language": language_hint,
+        "routing": dict(route),
+        "security": security,
+        "tool": {"name": tool,
+                 "input": {"customer_id": conversation.bound_subject, "reference": reference}
+                 if called else None,
+                 "output": output, "verified": verified, "attempts": reply.attempts},
+        "steps": trace,
+        "handoff": reply.handoff if reply.kind == "handoff" else None,
+        "latency_ms": latency_ms,
+        "llm_tokens": 0, "api_cost_usd": 0.0,
+    }
+
+
+def observe_ticket(result, conversation: Conversation, latency_ms: float,
+                   response_language: str, intended_case: str | None) -> dict:
+    packet = result.packet if result.kind == "created" else None
+    return {
+        "language": {"detected": response_language, "response_language": response_language,
+                     "source": "selector", "score": None},
+        "routing": {"intent": "human", "source": "confirmed_action", "confidence": None},
+        "security": "allowed" if packet else "unavailable",
+        "tool": {"name": "TicketStore.create_and_verify",
+                 "input": {"customer_id": conversation.bound_subject,
+                           "verified_case": intended_case},
+                 "output": packet if packet else {"status": result.kind},
+                 "verified": result.kind == "created" and "ticket_read_back" in result.trace,
+                 "attempts": 1},
+        "steps": tuple(result.trace), "handoff": packet,
+        "latency_ms": latency_ms, "llm_tokens": 0, "api_cost_usd": 0.0,
+    }
+
+
 st.markdown("""
 <style>
-.block-container {max-width: 1120px; padding-top: 1.5rem; padding-bottom: 3rem}
-.factored-hero {padding: 2rem 2.2rem; border-radius: 24px;
-    background: linear-gradient(115deg, #17323e 0%, #1c4136 57%, #112c3b 100%);
-    border: 1px solid #589781; color: #fff; margin: .5rem 0 1.5rem}
-.factored-kicker {color: #a8f2ca; font-size: .82rem; font-weight: 750;
+.block-container {max-width: 1260px; padding-top: 1.2rem; padding-bottom: 3rem}
+[data-testid="stSidebar"] {background: #122c31; color: #f5fbf8}
+[data-testid="stSidebar"] label, [data-testid="stSidebar"] p {color: #e7f3ee}
+.factored-hero {padding: 2rem 2.4rem; border-radius: 24px;
+    background: radial-gradient(circle at 85% 22%, #2a7466 0%, transparent 36%),
+    linear-gradient(115deg, #102a35 0%, #194539 64%, #102932 100%);
+    border: 1px solid #52947f; color: #fff; margin: .3rem 0 1.3rem;
+    box-shadow: 0 18px 50px #122d3229}
+.factored-kicker {color: #9de0bc; font-size: .8rem; font-weight: 750;
     letter-spacing: .14em; text-transform: uppercase}
-.factored-hero h1 {font-size: clamp(2rem, 4vw, 3.5rem); line-height: 1.1;
-    letter-spacing: -.03em; margin: .7rem 0; color: #fff}
-.factored-hero p {font-size: 1.1rem; color: #e3f2ea; margin: .5rem 0}
-.factored-tag {display: inline-block; border: 1px solid #85aa96; border-radius: 99px;
-    color: #d0ebdd; padding: .3rem .75rem; margin-top: .6rem}
-.factored-journey {display: flex; flex-wrap: wrap; gap: .6rem; margin: .7rem 0 1.4rem}
-.factored-step {border: 1px solid #95ada3; border-radius: 12px; padding: .55rem .8rem;
-    background: #f5f8f6; color: #244338; font-weight: 650; font-size: .87rem}
-.factored-step.current {background: #d8f2de; border-color: #53936d; color: #17422a}
-.factored-step.done {background: #e9eee9; color: #365747}
-[data-testid="stMetric"] {border: 1px solid #7ba68766; border-radius: 16px;
-    padding: .8rem 1rem; background: #70977d18}
-.stButton button {border-radius: 10px}
+.factored-hero h1 {font-size: clamp(1.9rem, 3.5vw, 3.25rem); line-height: 1.12;
+    letter-spacing: -.035em; margin: .55rem 0; color: #fff}
+.factored-hero p {font-size: 1.05rem; color: #e2f3ec; margin: .5rem 0}
+.factored-tag {display: inline-block; border: 1px solid #88b8a5; border-radius: 99px;
+    color: #e2f4e9; padding: .3rem .78rem; margin-top: .65rem; font-size: .79rem}
+.factored-panel {border: 1px solid #83a79888; border-radius: 17px;
+    padding: 1rem 1.2rem; background: #719d8112; margin: .5rem 0 1.2rem}
+.factored-panel strong {font-size: 1rem; color: #1e6a4e}
+[data-testid="stMetric"] {border: 1px solid #7ba68766; border-radius: 15px;
+    padding: .75rem .95rem; background: #70977d18}
+[data-testid="stChatMessage"] {border-radius: 15px; border: 1px solid #789d8966; margin-bottom: .55rem}
+.stButton button, .stFormSubmitButton button {border-radius: 10px}
+@media(max-width: 700px) {.factored-hero {padding: 1.4rem} .block-container {padding-top: .6rem}}
 </style>
 """, unsafe_allow_html=True)
 
-lang = "pt" if st.radio("Idioma / Idioma", ["Español", "Português"], horizontal=True) == "Português" else "es"
-t = COPY[lang]
+with st.sidebar:
+    st.markdown("### Factored · AI & Data")
+    lang = "pt" if st.radio("Idioma / Idioma", ("Español", "Português"), key="ui_language") == "Português" else "es"
+    t, ui = COPY[lang], UI_COPY[lang]
+    selected_profile = st.selectbox(ui["profile"], tuple(ACCOUNTS),
+                                    format_func=lambda item: ui["profiles"][item], key="demo_profile")
+    st.caption(ui["privacy"])
+
+if st.session_state.get("token"):
+    try:
+        authority.verify(st.session_state.token)
+    except SessionError:
+        for key in ("token", "profile", "conversation", "messages", "agent_events", "session_metrics"):
+            st.session_state.pop(key, None)
+        st.session_state.session_expired = True
+
+if (not st.session_state.get("token") and not st.session_state.get("session_expired")) or (
+        st.session_state.get("token") and st.session_state.get("profile") != selected_profile):
+    activate_test_session(selected_profile, ACCOUNTS[selected_profile][1])
+
+with st.sidebar:
+    if st.session_state.get("session_expired"):
+        st.warning(ui["expired"])
+    if st.button(ui["reset"], key="reset_demo_session", use_container_width=True):
+        activate_test_session(selected_profile, ACCOUNTS[selected_profile][1])
+        st.rerun()
+    with st.expander(ui["simulations"]):
+        st.checkbox(ui["fail_source"], key="simulate_error")
+        st.checkbox(ui["fail_ticket"], key="simulate_ticket_error")
+
 st.markdown(
     '<section class="factored-hero">'
     '<span class="factored-kicker">Factored · AI &amp; Data Hackathon 2026</span>'
-    f'<h1>{escape(t["title"])}</h1><p>{escape(t["subtitle"])}</p>'
-    f'<span class="factored-tag">{escape(t["tag"])}</span></section>',
+    f'<h1>{escape(ui["title"])}</h1><p>{escape(ui["subtitle"])}</p>'
+    f'<span class="factored-tag">{escape(ui["badge"])}</span></section>',
     unsafe_allow_html=True,
 )
-demo, review_tab, data_tab, design_tab = st.tabs(t["tabs"])
+client_tab, trace_tab, review_tab, data_tab, design_tab = st.tabs(ui["tabs"])
 
-with demo:
-    if "token" in st.session_state:
-        try:
-            authority.verify(st.session_state.token)
-        except SessionError:
-            for key in ("token", "profile", "conversation", "messages", "simulate_error", "simulate_ticket_error", "case_folio"):
-                st.session_state.pop(key, None)
-            st.session_state.login_notice = t["expired"]
-            st.rerun()
-    if "token" not in st.session_state:
-        st.subheader(t["start"])
-        st.caption(t["intro"])
-        if st.session_state.get("login_notice"):
-            st.warning(st.session_state.pop("login_notice"))
-        if st.button(t["quick_login"], type="primary", use_container_width=True):
-            activate_test_session("Alicia (prueba)", ACCOUNTS["Alicia (prueba)"][1])
-            st.rerun()
-        st.caption(t["quick_note"])
-        with st.expander(t["other_profile"]):
-            with st.form("login_form", clear_on_submit=True):
-                account = st.selectbox(t["profile"], list(ACCOUNTS))
-                st.caption("Alicia: 1379 · Bruno: 2468")
-                pin = st.text_input(t["pin"], type="password", max_chars=8)
-                submitted = st.form_submit_button(t["login"])
-            if submitted:
-                try:
-                    activate_test_session(account, pin)
-                except SessionError:
-                    st.error(t["bad_pin"])
-                else:
-                    st.rerun()
+with client_tab:
+    if not st.session_state.get("token"):
+        st.warning(ui["expired"])
     else:
-        profile = st.session_state.get("profile", "Alicia (prueba)")
+        conversation = st.session_state.conversation
+        messages = st.session_state.messages
+        profile = st.session_state.profile
         alicia = profile == "Alicia (prueba)"
-        st.success(t["session"].format(name=profile.split(" (")[0]))
-        st.caption(t["privacy"])
-        conversation = st.session_state.setdefault("conversation", Conversation())
-        messages = st.session_state.setdefault("messages", [])
-        last = messages[-1] if messages and messages[-1]["speaker"] == "assistant" else None
-        saved_ticket = (read_handoff_ticket(st.session_state.token, conversation,
-                                           authority, repository, tickets, last["ticket_id"],
-                                           fail_tool=st.session_state.get("simulate_error", False))
-                        if last and last.get("ticket_id") else None)
-        plan = last.get("plan") if last else None
-        if last and last.get("ticket_id") and not saved_ticket:
-            plan = {"state": "ticket_unavailable", "actions": ("human",)}
-        plan = plan or {"state": "ready", "actions": ("human",)}
-        stages = ("done", "done" if last else "current",
-                  "done" if saved_ticket else "current" if last else "")
-        st.markdown(
-            '<div class="factored-journey">' + ''.join(
-                f'<span class="factored-step {style}">{index}. {escape(label)}</span>'
-                for index, (style, label) in enumerate(zip(stages, t["journey_steps"]), 1)
-            ) + '</div>', unsafe_allow_html=True,
-        )
-        st.subheader(t["try"])
-        st.caption(t["flow_intro"])
-        prompts = {
-            "own": ("¿Cómo va R-101?" if alicia else "¿Cómo va R-201?") if lang == "es" else
-                   ("Qual é o status do caso R-101?" if alicia else "Qual é o status do caso R-201?"),
-            "foreign": ("¿Cómo va R-201?" if alicia else "¿Cómo va R-101?") if lang == "es" else
-                       ("Qual é o status do caso R-201?" if alicia else "Qual é o status do caso R-101?"),
-            "human": "Quiero hablar con un agente" if lang == "es" else "Quero falar com um atendente",
-            "dispute": "No reconozco un cargo en mi tarjeta" if lang == "es" else
-                       "Não reconheço uma cobrança no meu cartão",
-            "ambiguous": "¿Cuál es el estado de mi reclamación?" if lang == "es" else
-                         "Qual é o status do meu protocolo?",
-            "date": "¿Cuándo se actualizó?" if lang == "es" else "Quando foi atualizado?",
-            "reason": "¿Por qué está en ese estado?" if lang == "es" else "Por que está nesse status?",
-        }
-        prompt = None
-        left, right = st.columns([1.35, 1], gap="large")
+        st.caption(ui["session"].format(name=profile.split(" (")[0]))
+        st.markdown(f'<div class="factored-panel"><strong>{escape(ui["hint"])}</strong></div>',
+                    unsafe_allow_html=True)
+        left, right = st.columns([1.58, 1], gap="large")
         with left:
-            st.subheader(t["workspace"])
-            st.caption(t["folio_help"].format(cases="R-101, R-102" if alicia else "R-201"))
-            if conversation.waiting_for_case:
-                st.info(t["waiting_hint"])
-            with st.form("case_lookup", clear_on_submit=False):
-                suggested_case = "R-101" if alicia else "R-201"
-                folio = st.text_input(t["folio_label"], key="case_folio",
-                                      placeholder=suggested_case, max_chars=30)
-                check = st.form_submit_button(t["check"], type="primary", use_container_width=True)
-            if check:
-                if folio.strip():
-                    prompt = ("Estado de " if lang == "es" else "Status do protocolo ") + folio.strip()
-                else:
-                    st.warning(t["folio_missing"])
-            view = last.get("case_view") if last and (not last.get("ticket_id") or saved_ticket) else None
-            if view:
-                with st.container(border=True):
-                    st.caption(t["verified_label"])
-                    st.subheader(view["case_id"])
-                    state = view["status"]
-                    if lang == "pt":
-                        state = {"En proceso": "Em andamento", "Resuelto": "Resolvido",
-                                 "Escalado": "Encaminhado"}.get(state, state)
-                    # Full-width rows keep dates and statuses readable on narrow screens.
-                    st.markdown(f'**{t["status_label"]}:** {state}')
-                    st.markdown(f'**{t["date_label"]}:** {view["updated"]}')
-                    st.caption(t["snapshot_label"].format(
-                        date=view["snapshot_as_of"], source=view["source"],
-                    ))
-            elif not last:
-                st.info(t["empty_result"])
-            elif last.get("handoff") and "lookup_attempted" in last["handoff"].get("actions", []):
-                st.caption(t["unverified_summary"])
-            if last:
-                st.markdown(last["text"])
-                if last.get("ticket_id"):
-                    if saved_ticket:
-                        st.success(t["ticket_confirmed"].format(id=last["ticket_id"]))
-                        st.caption(t["ticket_expires"])
-                        try:
-                            review_receipt = read_handoff_review(
-                                st.session_state.token, conversation, authority,
-                                repository, tickets, last["ticket_id"],
-                            )
-                        except TicketStoreError:
-                            review_receipt = None
-                        if review_receipt:
-                            st.info(t["review_received"])
-                    else:
-                        st.warning(t["ticket_unavailable"])
-                elif last.get("handoff"):
-                    st.caption(t["simulated_handoff"])
-                    st.info(t["pending_action"].format(action=last["handoff"]["unresolved"]))
-                    if st.button(t["create_ticket"], key="create_test_ticket", type="primary"):
-                        result = create_handoff_ticket(
-                            st.session_state.token, conversation, authority, repository, tickets,
-                            language=lang, fail_tool=st.session_state.get("simulate_error", False),
-                            fail_write=st.session_state.get("simulate_ticket_error", False),
-                        )
-                        if result.kind == "created":
-                            last["ticket_id"] = result.ticket_id
-                            last["handoff"] = result.packet
-                            last["case_view"] = result.case_view
-                            last["evidence"] = result.packet.get("source") or ""
-                            last["trace"] = tuple(last["trace"]) + result.trace
-                            last["plan"] = {"state": "ticket_created", "actions": ()}
-                            st.rerun()
-                        elif result.kind == "stale":
-                            last.update(text=result.text, kind="stale", handoff=None,
-                                        case_view=None, evidence="",
-                                        plan={"state": "ticket_unavailable", "actions": ("human",)},
-                                        trace=tuple(last["trace"]) + result.trace)
-                            st.rerun()
-                        else:
-                            st.warning(result.text)
-        with right:
-            st.subheader(t["next_title"])
-            with st.container(border=True):
-                st.write(t["plans"].get(plan["state"], t["plans"]["need_clarification"]))
-                if plan["actions"]:
-                    st.caption(t["actions_title"])
-                for action in plan["actions"]:
-                    if st.button(t["actions"][action], key=f"guided_{action}", use_container_width=True):
-                        prompt = prompts["human" if action == "human" else action]
-                if not last or conversation.waiting_for_case:
-                    if st.button(t["orientation"], key="orientation", use_container_width=True):
-                        prompt = prompts["ambiguous"]
-            if st.button(t["dispute"], use_container_width=True, key="dispute_example"):
-                prompt = prompts["dispute"]
-            with st.expander(t["free_question"]):
-                with st.form("free_question_form", clear_on_submit=True):
-                    typed = st.text_input(t["free_question"], placeholder=t["free_placeholder"],
-                                          max_chars=600)
-                    if st.form_submit_button(t["send"], use_container_width=True):
-                        prompt = typed.strip()
-                        if not prompt:
-                            st.warning(t["empty_question"])
-            with st.expander(t["examples_title"]):
-                if st.button(t["test_own"], use_container_width=True, key="own_example"):
-                    prompt = prompts["own"]
-                if st.button(t["test_foreign"], use_container_width=True, key="foreign_example"):
-                    prompt = prompts["foreign"]
-                if st.button(t["test_ambiguous"], use_container_width=True, key="ambiguous_example"):
-                    prompt = prompts["ambiguous"]
-            with st.expander(t["advanced"]):
-                st.checkbox(t["fail"], key="simulate_error")
-                st.checkbox(t["fail_ticket"], key="simulate_ticket_error")
-                if st.button(t["expire"], key="expire_session"):
-                    st.session_state.token = authority.issue(
-                        profile, ACCOUNTS[profile][1], now=time.time() - 700, ttl=1,
-                    )
-                    st.rerun()
-            if st.button(t["logout"], key="logout_session"):
-                for key in ("token", "profile", "conversation", "messages", "simulate_error", "simulate_ticket_error", "case_folio"):
-                    st.session_state.pop(key, None)
-                st.rerun()
-
-        if last:
-            with st.expander(t["audit"]):
-                st.caption(
-                    f'{t["result"]}: {t["kind_labels"].get(last["kind"], last["kind"])} · '
-                    f'{t["source"]}: {last["evidence"] or t["none"]} · '
-                    f'{t["attempts"]}: {last["attempts"]}'
-                )
-                for code in last.get("trace", ()):
-                    st.write(f'• {t["trace_labels"].get(code, code)}')
-                if last.get("handoff") and (not last.get("ticket_id") or saved_ticket):
-                    st.caption(t["handoff"])
-                    st.json(saved_ticket if last.get("ticket_id") else last["handoff"])
-        with st.expander(t["history"]):
-            if not messages:
-                st.caption(t["history_empty"])
-            for entry in messages[-12:]:
+            st.subheader(ui["tabs"][0])
+            chips = st.columns(3)
+            prompt = st.session_state.pop("queued_prompt", None)
+            own = "R-101" if alicia else "R-201"
+            foreign = "R-201" if alicia else "R-101"
+            if chips[0].button(ui["own"], key="example_own", use_container_width=True):
+                prompt = own
+            if chips[1].button(ui["foreign"], key="example_foreign", use_container_width=True):
+                prompt = foreign
+            if chips[2].button(ui["missing"], key="example_missing", use_container_width=True):
+                prompt = ("¿Cómo va mi reclamación?" if lang == "es" else
+                          "Como está minha reclamação?")
+            for entry in messages[-18:]:
                 with st.chat_message(entry["speaker"]):
                     if entry["speaker"] == "user":
                         st.text(entry["text"])
+                    elif entry.get("kind") == "denied":
+                        st.error(entry["text"])
+                    elif entry.get("kind") in ("resolved", "ticket_created", "ticket_status"):
+                        st.success(entry["text"])
                     else:
                         st.markdown(entry["text"])
-
-        if prompt:
-            reply = respond(
-                prompt, st.session_state.token, st.session_state.conversation,
-                authority, repository, model, language=lang,
-                fail_tool=st.session_state.get("simulate_error", False),
-            )
-            if reply.kind == "auth_required":
-                for key in ("token", "profile", "conversation", "messages", "simulate_error", "simulate_ticket_error", "case_folio"):
-                    st.session_state.pop(key, None)
-                st.session_state.login_notice = reply.text
-                st.rerun()
-            messages.extend([
-                {"speaker": "user", "text": t["redacted"] if contains_sensitive_number(prompt) else prompt},
-                {"speaker": "assistant", "text": reply.text, "kind": reply.kind,
-                 "evidence": reply.evidence, "attempts": reply.attempts,
-                 "handoff": reply.handoff, "trace": reply.trace,
-                 "case_view": reply.case_view, "plan": reply.plan},
-            ])
-            if len(messages) > 24:
+            if not messages:
+                st.info(ui["chat_welcome"])
+            typed = st.chat_input(ui["chat_placeholder"], key="customer_chat", max_chars=600)
+            if typed:
+                prompt = typed
+            if prompt and prompt.strip():
+                start = time.perf_counter()
+                reply = respond(prompt, st.session_state.token, conversation, authority,
+                                repository, model, language=lang,
+                                fail_tool=st.session_state.get("simulate_error", False),
+                                ticket_store=tickets)
+                service_ms = round((time.perf_counter() - start) * 1000, 2)
+                if reply.kind == "auth_required":
+                    for key in ("token", "profile", "conversation", "messages", "agent_events", "session_metrics"):
+                        st.session_state.pop(key, None)
+                    st.session_state.session_expired = True
+                    st.rerun()
+                displayed_prompt = t["redacted"] if contains_sensitive_number(prompt) else prompt[:600]
+                messages.append({"speaker": "user", "text": displayed_prompt})
+                entry = {"speaker": "assistant", "text": reply.text, "kind": reply.kind,
+                         "case_view": reply.case_view, "handoff": reply.handoff,
+                         "plan": reply.plan, "ticket_id": None, "error": reply.error,
+                         "status_code": reply.status_code}
+                messages.append(entry)
                 del messages[:-24]
-            st.rerun()
+                metrics = st.session_state.session_metrics
+                metrics["calls"] += 1
+                metrics["latency_ms"] += service_ms
+                st.session_state.agent_events.append(
+                    observe_reply(reply, prompt, conversation, lang, service_ms))
+                del st.session_state.agent_events[:-12]
+                with st.chat_message("user"):
+                    st.text(displayed_prompt)
+                with st.chat_message("assistant"):
+                    if reply.kind == "denied":
+                        st.error(reply.text)
+                    else:
+                        st.write_stream(stream_verified_text(reply.text))
+                        if reply.kind == "resolved":
+                            st.success(ui["verified"])
+            last = next((item for item in reversed(messages) if item["speaker"] == "assistant"), None)
+
+        with right:
+            st.subheader(ui["next"])
+            view = last.get("case_view") if last else None
+            if last and last.get("ticket_id"):
+                saved = read_handoff_ticket(st.session_state.token, conversation, authority,
+                                            repository, tickets, last["ticket_id"])
+                if saved is None:
+                    view = None
+                    st.warning(ui["expired_ticket"])
+                else:
+                    st.success(ui["saved"].format(id=last["ticket_id"]))
+                    receipt = read_handoff_review(st.session_state.token, conversation,
+                                                  authority, repository, tickets,
+                                                  last["ticket_id"])
+                    if receipt:
+                        st.info(ui["review_received"])
+            if view:
+                with st.container(border=True):
+                    st.caption(ui["verified"])
+                    st.markdown(f'### {escape(view["case_id"])}')
+                    status = ({"En proceso": "Em andamento", "Resuelto": "Resolvido",
+                               "Escalado": "Encaminhado"}.get(view["status"], view["status"])
+                              if lang == "pt" else view["status"])
+                    st.markdown(f'**{t["status_label"]}:** {escape(status)}')
+                    st.markdown(f'**{t["date_label"]}:** {escape(view["updated"])}')
+                    st.caption(ui["snapshot"].format(date=view["snapshot_as_of"],
+                                                     source=view["source"]))
+            elif last and last.get("kind") == "denied":
+                st.error(ui["blocked"])
+            elif not last:
+                st.info(ui["ready"])
+            if last and last.get("kind") == "handoff" and last.get("handoff"):
+                st.caption(ui["handoff_hint"])
+                st.json(last["handoff"])
+                if st.button(ui["request_handoff"], key="create_test_ticket", type="primary",
+                             use_container_width=True):
+                    start = time.perf_counter()
+                    intended_case = last["handoff"].get("verified_case")
+                    result = create_handoff_ticket(st.session_state.token, conversation,
+                                                   authority, repository, tickets, language=lang,
+                                                   fail_tool=st.session_state.get("simulate_error", False),
+                                                   fail_write=st.session_state.get("simulate_ticket_error", False))
+                    save_ms = round((time.perf_counter() - start) * 1000, 2)
+                    st.session_state.session_metrics["calls"] += 1
+                    st.session_state.session_metrics["latency_ms"] += save_ms
+                    st.session_state.agent_events.append(observe_ticket(result, conversation,
+                                                                         save_ms, lang,
+                                                                         intended_case))
+                    del st.session_state.agent_events[:-12]
+                    if result.kind == "created":
+                        messages.append({"speaker": "assistant", "kind": "ticket_created",
+                                         "text": f"{result.text} `{result.ticket_id}`",
+                                         "ticket_id": result.ticket_id, "case_view": result.case_view,
+                                         "handoff": result.packet, "plan": {"state": "ticket_created",
+                                                                              "actions": ()}})
+                        del messages[:-24]
+                        st.rerun()
+                    elif result.kind == "stale":
+                        messages.append({"speaker": "assistant", "kind": "stale",
+                                         "text": result.text, "case_view": None,
+                                         "handoff": None, "ticket_id": None, "plan": None})
+                        st.rerun()
+                    else:
+                        st.warning(result.text)
+            plan = (last or {}).get("plan") or {"actions": ("human",)}
+            for action in plan.get("actions", ()):
+                if st.button(t["actions"][action], key=f"guided_{action}",
+                             use_container_width=True):
+                    st.session_state.queued_prompt = {
+                        "date": "¿Cuándo se actualizó?" if lang == "es" else "Quando foi atualizado?",
+                        "reason": "¿Por qué tiene ese estado?" if lang == "es" else "Por que está nesse status?",
+                        "human": "Quiero hablar con un agente" if lang == "es" else "Quero falar com um atendente",
+                    }[action]
+                    st.rerun()
+            if st.button(ui["dispute"], key="guided_dispute", use_container_width=True):
+                st.session_state.queued_prompt = ("No reconozco un cargo" if lang == "es" else
+                                                  "Não reconheço uma cobrança")
+                st.rerun()
+
+with trace_tab:
+    st.subheader(ui["trace_title"])
+    st.caption(ui["trace_scope"])
+    events = st.session_state.get("agent_events", [])
+    if not events:
+        st.info(ui["trace_empty"])
+    else:
+        event = events[-1]
+        route_info, lang_info, tool_info = event["routing"], event["language"], event["tool"]
+        metrics = st.session_state.session_metrics
+        st.markdown(f'#### {ui["metrics"]}')
+        a, b, c, d = st.columns(4)
+        a.metric(ui["tokens"], "0")
+        b.metric(ui["cost"], "$0.00")
+        c.metric(ui["latency"], f'{event["latency_ms"]:.2f}')
+        d.metric(ui["calls"], metrics["calls"])
+        st.caption(f'Total de latencia local / Latência local total: {metrics["latency_ms"]:.2f} ms')
+        st.caption(ui["metrics_note"])
+        with st.container(border=True):
+            st.markdown(f'#### 01 · {ui["phase"]["understand"]}')
+            st.write(f'{ui["language"]}: **{lang_info["detected"].upper()}** · '
+                     f'{ui["response_lang"]}: **{lang_info["response_language"].upper()}** '
+                     f'· {lang_info["source"]}')
+            if lang_info["score"] is not None:
+                st.caption(f'Score léxico / lexical: {lang_info["score"]:.1%}')
+            st.write(f'{ui["intent"]}: **{route_info["intent"] or "—"}** · '
+                     f'{ui["route"]}: **{route_info["source"] or "—"}**')
+            if route_info["confidence"] is None:
+                st.caption(ui["score_na"])
+            else:
+                st.metric(ui["score"], f'{route_info["confidence"]:.1%}')
+            st.caption(ui["score_note"])
+            st.caption(ui["language_note"])
+        with st.container(border=True):
+            st.markdown(f'#### 02 · {ui["phase"]["decide"]}')
+            st.write(f'{ui["security"]}: **{ui["status_labels"][event["security"]]}**')
+            st.caption(" → ".join(event["steps"]))
+        with st.container(border=True):
+            st.markdown(f'#### 03 · {ui["phase"]["act"]} / {ui["phase"]["verify"]}')
+            if tool_info["name"]:
+                st.code(tool_info["name"], language="text")
+                col_input, col_output = st.columns(2)
+                with col_input:
+                    st.caption(ui["payload_in"])
+                    st.json(tool_info["input"])
+                with col_output:
+                    st.caption(ui["payload_out"])
+                    st.json(tool_info["output"])
+                st.write(f'{ui["verified_step"]}: **{bool(tool_info["verified"])}** · '
+                         f'{t["attempts"]}: {tool_info["attempts"]}')
+            else:
+                st.info(ui["not_called"])
+        if event["handoff"]:
+            with st.container(border=True):
+                st.markdown(f'#### 04 · {ui["phase"]["escalate"]}')
+                st.caption(ui["escalation"])
+                st.json(event["handoff"])
+        if len(events) > 1:
+            with st.expander(ui["history"]):
+                for previous in reversed(events[-8:-1]):
+                    st.write(f'{previous["routing"]["intent"] or "—"} · '
+                             f'{previous["security"]} · {previous["latency_ms"]:.2f} ms')
 
 with review_tab:
     review = t["review"]
@@ -766,7 +963,7 @@ with data_tab:
         st.caption(t["fresh_limits"])
         with st.expander(t["fresh_errors"]):
             st.table(fresh["workflow"]["learned"]["errors"])
-    regression_path = folder / "synthetic_eval_results_v12_regression.json"
+    regression_path = folder / "synthetic_eval_results_v13_regression.json"
     if regression_path.exists():
         regression = json.loads(regression_path.read_text(encoding="utf-8"))
         st.subheader(t["regression_title"])

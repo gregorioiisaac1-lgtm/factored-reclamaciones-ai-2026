@@ -80,7 +80,7 @@ class SecurityTests(unittest.TestCase):
 
     def test_unsupported_account_changes_do_not_become_false_charge_disputes(self):
         for language, phrase in (
-            ("es", "Quiero bloquear la tarjeta vinculada a R-101"),
+            ("es", "¿Dónde consulto comisiones de cajero y tarjetas?"),
             ("pt", "Onde posso mudar o endereço do meu cadastro?"),
         ):
             with self.subTest(phrase=phrase):
@@ -239,7 +239,7 @@ class SecurityTests(unittest.TestCase):
                 self.assertNotIn("case_from_context", denied.trace)
                 self.assertFalse(conversation.last_verified_case)
 
-    def test_requested_agent_preempts_waiting_status_case(self):
+    def test_explicit_folio_routes_status_even_when_agent_is_requested(self):
         conversation = Conversation()
         first = respond("¿Cómo va mi reclamación?", self.a, conversation,
                         self.authority, self.repo, self.model, now=1001)
@@ -247,14 +247,10 @@ class SecurityTests(unittest.TestCase):
         self.assertTrue(conversation.waiting_for_case)
         reply = respond("Quiero un agente para R-101", self.a, conversation,
                         self.authority, self.repo, self.model, now=1002)
-        self.assertEqual(reply.kind, "handoff")
-        self.assertEqual(reply.handoff["reason"], "requested")
-        self.assertEqual(reply.handoff["verified_case"], "R-101")
-        self.assertEqual(reply.handoff["verified_status"], "En proceso")
-        self.assertEqual(reply.handoff["verified_updated"], "15/12/2025")
-        self.assertEqual(reply.handoff["snapshot_as_of"], "31/12/2025")
-        self.assertEqual(reply.handoff["source"], "mock-case:R-101")
-        self.assertEqual(reply.handoff["actions"], ["read_only_lookup"])
+        self.assertEqual(reply.kind, "resolved")
+        self.assertEqual(reply.intent, "status")
+        self.assertIsNone(reply.handoff)
+        self.assertEqual(reply.case_view["case_id"], "R-101")
         self.assertEqual(reply.attempts, 1)
         self.assertIn("lookup_checked", reply.trace)
 
@@ -297,7 +293,7 @@ class SecurityTests(unittest.TestCase):
                 self.assertIn("lookup_checked", handoff.trace)
                 self.assertFalse(conversation.last_verified_case)
 
-    def test_human_handoff_foreign_and_missing_cases_have_same_verified_fields(self):
+    def test_human_request_with_foreign_and_missing_folios_gets_same_403(self):
         for language, request in (
             ("es", "Quiero hablar con un agente sobre {}"),
             ("pt", "Quero falar com um atendente sobre {}"),
@@ -307,11 +303,12 @@ class SecurityTests(unittest.TestCase):
                 absent = self.query(request.format("R-999"), router="learned", language=language)
                 self.assertEqual(foreign.kind, absent.kind)
                 self.assertEqual(foreign.text, absent.text)
-                for key in ("reason", "verified_case", "verified_status", "verified_updated", "snapshot_as_of", "source", "actions"):
-                    self.assertEqual(foreign.handoff[key], absent.handoff[key])
-                self.assertIsNone(foreign.handoff["verified_status"])
+                self.assertEqual(foreign.status_code, 403)
+                self.assertEqual(foreign.error, absent.error)
+                self.assertIsNone(foreign.handoff)
+                self.assertIsNone(foreign.case_view)
                 self.assertEqual(foreign.attempts, 1)
-                self.assertNotIn("Escalado", str(foreign.handoff))
+                self.assertNotIn("Escalado", str(foreign))
 
     def test_human_handoff_drops_prior_status_if_access_is_revoked(self):
         class RevokedRepository(CaseRepository):
@@ -334,16 +331,15 @@ class SecurityTests(unittest.TestCase):
         self.assertIsNone(handoff.handoff["snapshot_as_of"])
         self.assertEqual(handoff.handoff["actions"], ["lookup_attempted"])
 
-    def test_human_with_multiple_case_ids_does_not_guess_or_use_old_context(self):
+    def test_multiple_case_ids_do_not_guess_or_use_old_context(self):
         conversation = Conversation()
         own = respond("Estado de R-101", self.a, conversation, self.authority,
                       self.repo, self.model, now=1001)
         self.assertEqual(own.kind, "resolved")
         handoff = respond("Quiero un agente para R-101 y R-201", self.a, conversation,
                           self.authority, self.repo, self.model, now=1002)
-        self.assertEqual(handoff.kind, "handoff")
-        self.assertIsNone(handoff.handoff["verified_case"])
-        self.assertIsNone(handoff.handoff["verified_status"])
+        self.assertEqual(handoff.kind, "clarify")
+        self.assertIsNone(handoff.handoff)
         self.assertEqual(handoff.attempts, 0)
         self.assertNotIn("lookup_checked", handoff.trace)
 

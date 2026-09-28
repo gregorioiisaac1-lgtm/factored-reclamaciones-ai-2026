@@ -1,5 +1,15 @@
 {
-  "provenance": "organizer ZIPs; read locally; aggregate outputs only",
+  "provenance": {
+    "dataset": "synthetic LATAM Bank samples",
+    "record_level_data_exported": false,
+    "sources": {
+      "interactions": "directory",
+      "complaints": "zip",
+      "transcripts": "zip"
+    },
+    "interactions_process_date_min": "2025-01-01",
+    "interactions_process_date_max": "2025-12-31"
+  },
   "interactions_2025": {
     "rows": 229056,
     "by_reason_category": {
@@ -11,17 +21,97 @@
       "Retención": 6848
     },
     "requires_followup_by_reason": {
-      "Transaccional": 17609,
       "Queja": 24582,
+      "Transaccional": 17609,
       "Producto": 11914,
-      "Técnico": 13961,
       "Comercial": 8197,
+      "Técnico": 13961,
       "Retención": 3410
+    },
+    "fcr": {
+      "definition": "was_resolved=True; documented as resolved on first call",
+      "denominator": "nonmissing was_resolved interactions",
+      "known_fcr_n": 229056,
+      "resolved_first_contact_n": 175460,
+      "rate_pct": 76.6,
+      "strict_without_followup_n": 149383,
+      "strict_without_followup_rate_pct": 65.22,
+      "by_channel": [
+        {
+          "group": "Phone",
+          "interactions_n": 194598,
+          "known_fcr_n": 194598,
+          "fcr_n": 148952,
+          "fcr_rate_pct": 76.54,
+          "strict_without_followup_n": 126808,
+          "strict_without_followup_rate_pct": 65.16
+        },
+        {
+          "group": "Email",
+          "interactions_n": 9273,
+          "known_fcr_n": 9273,
+          "fcr_n": 7170,
+          "fcr_rate_pct": 77.32,
+          "strict_without_followup_n": 6123,
+          "strict_without_followup_rate_pct": 66.03
+        },
+        {
+          "group": "App",
+          "interactions_n": 8607,
+          "known_fcr_n": 8607,
+          "fcr_n": 6607,
+          "fcr_rate_pct": 76.76,
+          "strict_without_followup_n": 5630,
+          "strict_without_followup_rate_pct": 65.41
+        },
+        {
+          "group": "Web Chat",
+          "interactions_n": 7764,
+          "known_fcr_n": 7764,
+          "fcr_n": 5932,
+          "fcr_rate_pct": 76.4,
+          "strict_without_followup_n": 5063,
+          "strict_without_followup_rate_pct": 65.21
+        },
+        {
+          "group": "WhatsApp",
+          "interactions_n": 7651,
+          "known_fcr_n": 7651,
+          "fcr_n": 5906,
+          "fcr_rate_pct": 77.19,
+          "strict_without_followup_n": 5001,
+          "strict_without_followup_rate_pct": 65.36
+        },
+        {
+          "group": "Web",
+          "interactions_n": 1163,
+          "known_fcr_n": 1163,
+          "fcr_n": 893,
+          "fcr_rate_pct": 76.78,
+          "strict_without_followup_n": 758,
+          "strict_without_followup_rate_pct": 65.18
+        }
+      ],
+      "by_country": null,
+      "by_channel_country": null,
+      "country_unknown_n": 229056
+    },
+    "escalated_to_supervisor": {
+      "n": 22806,
+      "rate_pct": 9.96,
+      "definition": "was_escalated=True means supervisor, not human handoff"
     }
   },
   "complaints_2025": {
     "rows": 22356,
     "missing_origin_interaction_id": 22356,
+    "by_category": {
+      "Service": 4405,
+      "Branch": 4493,
+      "Transactions": 4570,
+      "Fees": 4433,
+      "Technical": 4455
+    },
     "by_subcategory": {
       "Calidad de servicio": 3969,
       "Sin dato": 2275,
@@ -37,6 +127,141 @@
       "Open": 6668,
       "Rejected": 240,
       "Closed": 846
+    },
+    "by_category_subcategory": [
+      {
+        "category": "Transactions",
+        "subcategory": "Cargo no reconocido",
+        "count": 4123
+      },
+      {
+        "category": "Technical",
+        "subcategory": "Problema con app",
+        "count": 4018
+      },
+      {
+        "category": "Fees",
+        "subcategory": "Cobro indebido",
+        "count": 3994
+      },
+      {
+        "category": "Branch",
+        "subcategory": "Atención en sucursal",
+        "count": 3977
+      },
+      {
+        "category": "Service",
+        "subcategory": "Calidad de servicio",
+        "count": 3969
+      },
+      {
+        "category": "Branch",
+        "subcategory": "Sin dato",
+        "count": 516
+      },
+      {
+        "category": "Transactions",
+        "subcategory": "Sin dato",
+        "count": 447
+      },
+      {
+        "category": "Fees",
+        "subcategory": "Sin dato",
+        "count": 439
+      },
+      {
+        "category": "Technical",
+        "subcategory": "Sin dato",
+        "count": 437
+      },
+      {
+        "category": "Service",
+        "subcategory": "Sin dato",
+        "count": 436
+      }
+    ],
+    "currently_escalated_status": {
+      "n": 1149,
+      "rate_pct": 5.14,
+      "definition": "status snapshot, not final human outcome"
+    },
+    "final_human_escalation": {
+      "rate_pct": null,
+      "reason": "No destination or longitudinal final outcome; Escalated does not establish human support"
+    },
+    "resolution_time": {
+      "unit": "days",
+      "population": "Resolved or Closed complaints",
+      "priority": "resolution_days if nonnegative, otherwise resolution_date minus creation_date",
+      "overall": {
+        "group": "all",
+        "resolved_cases_n": 5337,
+        "timed_cases_n": 5324,
+        "mean_days": 15.64,
+        "reported_days_n": 5040,
+        "derived_from_dates_n": 284,
+        "without_valid_time_n": 13
+      },
+      "by_reception_channel": [
+        {
+          "group": "Call Center",
+          "resolved_cases_n": 2747,
+          "timed_cases_n": 2740,
+          "mean_days": 15.67,
+          "reported_days_n": 2594,
+          "derived_from_dates_n": 146,
+          "without_valid_time_n": 7
+        },
+        {
+          "group": "Email",
+          "resolved_cases_n": 1031,
+          "timed_cases_n": 1027,
+          "mean_days": 15.9,
+          "reported_days_n": 970,
+          "derived_from_dates_n": 57,
+          "without_valid_time_n": 4
+        },
+        {
+          "group": "Web",
+          "resolved_cases_n": 785,
+          "timed_cases_n": 784,
+          "mean_days": 15.36,
+          "reported_days_n": 742,
+          "derived_from_dates_n": 42,
+          "without_valid_time_n": 1
+        },
+        {
+          "group": "App",
+          "resolved_cases_n": 525,
+          "timed_cases_n": 525,
+          "mean_days": 15.35,
+          "reported_days_n": 495,
+          "derived_from_dates_n": 30,
+          "without_valid_time_n": 0
+        },
+        {
+          "group": "Branch",
+          "resolved_cases_n": 193,
+          "timed_cases_n": 192,
+          "mean_days": 15.84,
+          "reported_days_n": 183,
+          "derived_from_dates_n": 9,
+          "without_valid_time_n": 1
+        },
+        {
+          "group": "Regulator",
+          "resolved_cases_n": 56,
+          "timed_cases_n": 56,
+          "mean_days": 15.34,
+          "reported_days_n": 56,
+          "derived_from_dates_n": 0,
+          "without_valid_time_n": 0
+        }
+      ],
+      "by_country": null,
+      "by_reception_channel_country": null,
+      "country_unknown_n": 22356,
+      "invalid_resolution_time_n": 0
     }
   },
   "transcripts_jan_2025": {
@@ -58,5 +283,39 @@
       "Retención": 133
     }
   },
-  "interpretation": "Transcript texts have very low variety and repeat across reason labels; do not train an intent classifier on these labels."
+  "roi": {
+    "contact_scope": "interactions with reason_category=Queja; not a measure of disputes eligible for automation",
+    "status": "not_calculable_without_explicit_assumptions",
+    "sampled_complaint_related_interactions_n": 39228,
+    "human_cost_per_interaction_usd": null,
+    "llm_cost_per_automated_resolution_usd": null,
+    "savings_pct": null,
+    "agent_hours_freed": null,
+    "roi_pct": null,
+    "formulas": {
+      "attempts": "complaint_related_interactions * automatable_share (rounded to nearest whole interaction)",
+      "automated_resolutions": "attempts * automation_success_rate",
+      "new_cost": "attempts * llm_cost_per_attempt + failed_attempts * human_cost + fixed_platform_cost",
+      "net_savings": "baseline_human_cost - new_cost",
+      "agent_hours_freed": "automated_resolutions * human_handling_minutes / 60"
+    },
+    "required_inputs": [
+      "human_cost_usd",
+      "llm_cost_per_attempt_usd",
+      "automatable_share",
+      "automation_success_rate",
+      "human_handling_minutes",
+      "fixed_platform_cost_usd"
+    ],
+    "reason": "No costs or LLM success outcomes in these tables; FCR is not an automation success rate."
+  },
+  "data_quality": {
+    "country_available": false,
+    "country_note": "Country absent from these tables; accent and currency cannot establish residence",
+    "was_resolved_true_and_requires_followup_true_n": 26077,
+    "fcr_note": "Primary FCR follows the data dictionary; strict no-followup proxy is separate. Conflicting flags need review.",
+    "complaint_to_interaction_linkable_n": 0,
+    "cross_table_note": "Interaction FCR and complaint resolution days use different populations; do not join by channel name."
+  },
+  "interpretation": "Repeated transcript text across labels is unsuitable for intent training. Supervisor escalation and Escalated status do not measure final human handoff."
 }

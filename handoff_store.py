@@ -10,6 +10,7 @@ import secrets
 import sqlite3
 import tempfile
 import time
+from typing import Any
 
 
 class TicketStoreError(Exception):
@@ -48,7 +49,10 @@ class TicketStore:
             raise
         return connection
 
-    def create_and_verify(self, owner, session_scope, request_key, packet, *, now=None, fail_write=False, fail_read=False):
+    def create_and_verify(self, owner: str, session_scope: str, request_key: str,
+                          packet: dict[str, Any], *, now: float | None = None,
+                          fail_write: bool = False, fail_read: bool = False
+                          ) -> tuple[str, dict[str, Any]]:
         """Idempotently insert, then read the stored packet before claiming success."""
         timestamp = int(time.time() if now is None else now)
         ticket_id = "T-" + secrets.token_hex(8).upper()
@@ -61,7 +65,8 @@ class TicketStore:
                 connection.execute(
                     """INSERT INTO tickets (ticket_id, owner, session_scope, request_key, created_at, packet)
                        VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(owner, session_scope, request_key) DO NOTHING""",
-                    (ticket_id, owner, session_scope, request_key, timestamp, json.dumps(packet, ensure_ascii=False)),
+                    (ticket_id, owner, session_scope, request_key, timestamp,
+                     json.dumps({**packet, "ticket_id": ticket_id}, ensure_ascii=False)),
                 )
                 row = connection.execute(
                     "SELECT ticket_id FROM tickets WHERE owner = ? AND session_scope = ? AND request_key = ?",
@@ -73,7 +78,9 @@ class TicketStore:
             confirmed = self.read(owner, session_scope, row[0], now=timestamp)
             if confirmed is None:
                 raise TicketStoreError("ticket not confirmed")
-            if confirmed != packet:
+            if confirmed.get("ticket_id") != row[0] or {
+                key: value for key, value in confirmed.items() if key != "ticket_id"
+            } != packet:
                 # An idempotent retry must never join an old persisted packet
                 # to a newly fetched case view and claim both are current.
                 raise TicketConflictError("case changed after ticket confirmation")
@@ -81,7 +88,8 @@ class TicketStore:
         except (OSError, sqlite3.Error) as exc:
             raise TicketStoreError("ticket queue unavailable") from exc
 
-    def read(self, owner, session_scope, ticket_id, *, now=None):
+    def read(self, owner: str, session_scope: str, ticket_id: str, *,
+             now: float | None = None) -> dict[str, Any] | None:
         timestamp = int(time.time() if now is None else now)
         try:
             with closing(self._connect()) as connection, connection:

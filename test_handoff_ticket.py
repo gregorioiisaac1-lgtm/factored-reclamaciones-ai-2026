@@ -61,19 +61,16 @@ class TicketTests(unittest.TestCase):
         with sqlite3.connect(self.path) as connection:
             self.assertEqual(connection.execute("SELECT COUNT(*) FROM tickets").fetchone()[0], 1)
 
-    def test_foreign_and_missing_folios_never_get_verified_facts_in_ticket(self):
-        packets = []
+    def test_foreign_and_missing_folios_cannot_open_ticket_or_get_verified_facts(self):
         for case in ("R-201", "R-999"):
             reply, convo = self.ask("Quiero hablar con un agente sobre " + case)
-            self.assertEqual(reply.kind, "handoff")
+            self.assertEqual(reply.kind, "denied")
+            self.assertEqual(reply.status_code, 403)
+            self.assertIsNone(reply.handoff)
             result = self.create(convo)
-            self.assertEqual(result.kind, "created")
-            self.assertIsNone(result.packet["verified_case"])
-            self.assertIsNone(result.packet["verified_status"])
-            self.assertIsNone(result.packet["source"])
-            self.assertNotIn(case, str(result.packet))
-            packets.append(result.packet)
-        self.assertEqual(packets[0], packets[1])
+            self.assertEqual(result.kind, "unavailable")
+            self.assertIsNone(result.packet)
+        self.assertFalse(self.path.exists())
 
     def test_source_failure_can_create_safe_ticket_without_case_status(self):
         reply, convo = self.ask("Estado de R-101", fail_tool=True)

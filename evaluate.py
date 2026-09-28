@@ -194,8 +194,8 @@ def evaluate():
     return {
         "kind": "offline development evaluation with participant-authored examples; no customer records in model",
         "model_version": "tfidf-char-2-5-logreg-c2-2026-09-27", "baseline_version": "keywords-dispute-precedence-2026-09-27",
-        "workflow_version": "guided-case-ticket-controller-v12-2026-09-27",
-        "routing_note": "Intent model proposes a route; deterministic policy plans safe next actions from verified outcomes. In reference handoff cases the evaluation simulates explicit confirmation, counts a handoff correct only after a mock ticket is committed and read back. No real human receives a ticket. The reviewer demo is covered by separate integration tests, not this workload.",
+        "workflow_version": "guided-case-ticket-controller-v13-2026-09-28",
+        "routing_note": "Regex references and explicit bilingual policy route before local model inference; deterministic owner checks guard tool reads. When a handoff is expected, the evaluation simulates explicit confirmation, counting it correct only after a mock ticket is committed and read back. No real human receives a ticket. The reviewer demo is covered by separate integration tests.",
         "training_n": len(train_texts), "train_test_exact_overlap": 0,
         "training_cv": training_cross_validation(),
         "intent_holdout": classification, "same_workflow_cases": workflow,

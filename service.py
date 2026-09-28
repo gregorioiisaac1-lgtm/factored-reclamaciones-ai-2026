@@ -15,8 +15,10 @@ import re
 import secrets
 import time
 
-from intent import baseline, fold, learned
-from handoff_store import TicketConflictError, TicketStoreError
+from intent import baseline, fold, learned_with_score
+from handoff_store import TicketConflictError, TicketStore, TicketStoreError
+from routing import route
+from tenancy import TenantMiddleware
 
 
 AS_OF = "31/12/2025"
@@ -28,10 +30,7 @@ CASES = {
     "R-201": {"owner": "test-b", "status": "Escalado", "updated": "22/12/2025", "topic": "Cargo no reconocido"},
     "R-301": {"owner": "test-a", "status": "Dato inválido", "updated": "", "topic": "Cargo no reconocido"},
 }
-CASE_RE = re.compile(r"\bR[\s\-–]?\d{3}\b", re.IGNORECASE)
 SENSITIVE_NUMBER_RE = re.compile(r"(?<!\d)(?:\d[\s-]?){11,18}\d(?!\d)")
-UNSUPPORTED_ACTION_RE = re.compile(r"\b(bloque\w*|desbloque\w*|cambi\w*|mudar|alter\w*|modific\w*|atualiz\w*|actualiz\w*)\b")
-UNSUPPORTED_OBJECT_RE = re.compile(r"\b(tarjet\w*|cartao|cartoes|direccion|endereco|domicilio|contrasen\w*|senha\w*)\b")
 
 
 class SessionError(Exception):
@@ -97,14 +96,13 @@ class SessionAuthority:
 
 
 class CaseRepository:
-    def lookup(self, customer, case_id, *, fail=False):
+    def __init__(self) -> None:
+        self._tenant = TenantMiddleware(CASES)
+
+    def lookup(self, customer: str, case_id: str, *, fail: bool = False) -> dict | None:
         if fail:
             raise ToolError("No disponible")
-        case = CASES.get(case_id)
-        # The same result for nonexistent and another customer's case prevents enumeration.
-        if case is None or case["owner"] != customer:
-            return None
-        return {k: v for k, v in case.items() if k != "owner"}
+        return self._tenant.read_owned(customer, case_id)
 
 
 @dataclass
@@ -118,6 +116,7 @@ class Conversation:
     pending_handoff: dict | None = None
     pending_key: str = ""
     turns: list = field(default_factory=list)
+    last_route: dict | None = None
 
 
 @dataclass
@@ -132,6 +131,8 @@ class Reply:
     trace: tuple[str, ...] = ()
     case_view: dict | None = None
     plan: dict | None = None
+    status_code: int = 200
+    error: dict | None = None
 
 
 @dataclass
@@ -159,6 +160,8 @@ def _finish(reply, steps, *outcomes):
     if reply.kind == "resolved":
         state = "in_progress" if reply.case_view["status"] == "En proceso" else "resolved_case"
         actions = ("date", "reason", "human") if state == "in_progress" else ("date", "human")
+    elif reply.kind == "ticket_status":
+        state, actions = "ticket_created", ()
     elif reply.kind == "handoff":
         state = f"handoff_{reply.handoff['reason']}"
         actions = ()  # A handoff has already been prepared; no second handoff button.
@@ -210,7 +213,30 @@ def _case_view(case_id, record):
             "source": f"mock-case:{case_id}", "snapshot_as_of": AS_OF}
 
 
-def respond(message, token, conversation, authority, repository, model, *, language="es", router="learned", fail_tool=False, now=None):
+def _forbidden(language: str, intent: str = "status") -> Reply:
+    """Identical 403 for a missing or foreign reference prevents enumeration."""
+    message = say(
+        "Acceso denegado: el folio no está disponible para esta sesión de prueba.",
+        "Acesso negado: o protocolo não está disponível para esta sessão de teste.",
+        language,
+    )
+    return Reply("denied", message, intent, status_code=403,
+                 error={"status": 403, "code": "FORBIDDEN", "message": message})
+
+
+def _sentiment_label(message: str) -> str:
+    """Bounded lexical hint from this request only; no diagnosis or raw text."""
+    normalized = fold(message)
+    if re.search(r"\b(urgente|urgencia|frustrad\w*|molest\w*|enojad\w*|irritad\w*|"
+                 r"preocupad\w*|irritado|preocupado|chatead\w*)\b", normalized):
+        return "expressed_concern"
+    return "unknown"
+
+
+def respond(message: str, token: str, conversation: Conversation,
+            authority: SessionAuthority, repository: CaseRepository, model: object, *,
+            language: str = "es", router: str = "learned", fail_tool: bool = False,
+            now: float | None = None, ticket_store: TicketStore | None = None) -> Reply:
     """Return verified facts only; classifier may suggest a route but cannot use tools."""
     language = "pt" if language == "pt" else "es"
     message = message.strip()[:600]
@@ -228,6 +254,7 @@ def respond(message, token, conversation, authority, repository, model, *, langu
         conversation.bound_subject = subject
         conversation.bound_session = session_id
         conversation.ticket_scope = secrets.token_hex(16)
+    conversation.last_route = None
     conversation.pending_handoff = None
     conversation.pending_key = ""
     if not message:
@@ -239,40 +266,26 @@ def respond(message, token, conversation, authority, repository, model, *, langu
             "Não informe números reais de cartão ou conta nesta demonstração. Pergunte novamente sem eles.",
             language,
         ), trace=("session_verified", "sensitive_input_blocked"))
-    case_ids = ["R-" + re.sub(r"\D", "", match.group()) for match in CASE_RE.finditer(message)]
+    decision = route(message, lambda text: learned_with_score(text, model) if router == "learned"
+                     else baseline(text))
+    case_ids = [ref.identifier for ref in decision.references if ref.kind == "claim"]
+    ticket_ids = [ref.identifier for ref in decision.references if ref.kind == "ticket"]
     case_id = case_ids[0] if case_ids else ""
     normalized = fold(message)
     date_requested = bool(re.search(r"\b(cuando|quando|fecha|data|actualiz\w*|atualiz\w*|ultima)\b", normalized))
     reason_requested = bool(re.search(r"\b(por que|porque|motivo|razon|razao)\b", normalized))
     new_case_requested = bool(re.search(r"\b(otro|otra|outro|outra|nuevo|nova)\b", normalized))
-    intent = (learned(message, model) if router == "learned" else baseline(message))
-    explicit = baseline(message)
-    # A request for a human or a new dispute takes precedence over prior status context.
-    if router == "learned" and explicit in ("human", "new_dispute"):
-        intent = explicit
-    elif (explicit not in ("human", "new_dispute") and
-          UNSUPPORTED_ACTION_RE.search(normalized) and UNSUPPORTED_OBJECT_RE.search(normalized)):
-        # A model's similar wording must not turn card/address/password changes
-        # into a fabricated claim about an unrecognized charge.
-        intent = "other"
-    elif (router == "learned" and case_id and intent in ("other", "unclear")
-          and re.search(r"\b(estado|status)\b", normalized)):
-        # A narrow, read-only recovery for an explicit case-status question.
-        # The source still enforces ownership before any fact can be shown.
-        intent = "status"
+    intent = decision.intent
     using_context = False
-    if intent not in ("human", "new_dispute"):
-        if len(set(case_ids)) > 1:
-            intent = "status"
-        elif CASE_RE.fullmatch(message) or (conversation.waiting_for_case and case_id):
-            intent = "status"
-        elif case_id and (date_requested or reason_requested):
-            intent = "status"
-        elif (not case_id and conversation.last_verified_case and not new_case_requested
-              and (date_requested or reason_requested)):
+    if not decision.references and (decision.source != "policy" or decision.intent == "status"):
+        if (conversation.last_verified_case and not new_case_requested and
+                (date_requested or reason_requested)):
             case_id = conversation.last_verified_case
             using_context = True
             intent = "status"
+    conversation.last_route = {"intent": intent,
+                               "source": "context" if using_context else decision.source,
+                               "confidence": None if using_context else decision.confidence}
     steps = ["session_verified", f"route_{intent}"]
     if using_context:
         steps.append("case_from_context")
@@ -281,7 +294,7 @@ def respond(message, token, conversation, authority, repository, model, *, langu
     if len(conversation.turns) > 12:
         conversation.turns = conversation.turns[-12:]
     if intent == "status":
-        if len(set(case_ids)) > 1:
+        if len(decision.references) > 1:
             conversation.waiting_for_case = True
             _forget_case(conversation)
             return _finish(Reply("clarify", say(
@@ -289,6 +302,19 @@ def respond(message, token, conversation, authority, repository, model, *, langu
                 "Vejo vários protocolos. Informe apenas um para consultar o status.",
                 language,
             ), intent), steps, "ask_one_case")
+        if ticket_ids:
+            conversation.waiting_for_case = False
+            _forget_case(conversation)
+            packet = (read_handoff_ticket(token, conversation, authority, repository,
+                                         ticket_store, ticket_ids[0], now=now)
+                      if ticket_store is not None else None)
+            if packet is None:
+                return _finish(_forbidden(language, intent), steps, "lookup_checked", "not_available")
+            return _finish(Reply("ticket_status", say(
+                f"El ticket de prueba {ticket_ids[0]} está guardado y verificado en la cola temporal. No implica atención de un banco real.",
+                f"O ticket de teste {ticket_ids[0]} está salvo e confirmado na fila temporária. Não significa atendimento bancário real.",
+                language), intent, evidence="mock-ticket-store", attempts=1),
+                           steps, "lookup_checked", "ticket_read_back")
         if not case_id:
             conversation.waiting_for_case = True
             _forget_case(conversation)
@@ -304,10 +330,9 @@ def respond(message, token, conversation, authority, repository, model, *, langu
             return _finish(_handoff(conversation, "tool_failure", intent, subject, case_id, None,
                                     language, message, attempts), steps, "lookup_failed", "human_handoff")
         if record is None:
-            return _finish(Reply("denied", say(
-                "No encuentro ese folio en tu sesión de prueba. Comprueba el número o solicita atención humana.",
-                "Não encontro esse protocolo na sua sessão de teste. Confira o número ou peça atendimento humano.",
-                language), intent, attempts=attempts), steps, "lookup_checked", "not_available")
+            denied = _forbidden(language, intent)
+            denied.attempts = attempts
+            return _finish(denied, steps, "lookup_checked", "not_available")
         if not _usable_record(record):
             return _finish(_handoff(conversation, "invalid_data", intent, subject, case_id, None,
                                     language, message, attempts), steps, "lookup_checked", "human_handoff")
@@ -367,7 +392,9 @@ def respond(message, token, conversation, authority, repository, model, *, langu
         language), intent), steps, "outside_scope")
 
 
-def _handoff(conversation, reason, intent, subject, case_id, record, language, message, attempts):
+def _handoff(conversation: Conversation, reason: str, intent: str, subject: str,
+             case_id: str, record: dict[str, str] | None, language: str,
+             message: str, attempts: int) -> Reply:
     questions = {
         "tool_failure": ("Verificar disponibilidad de la fuente y consultar el estado antes de informar al cliente",
                          "Verificar a disponibilidade da fonte e consultar o status antes de informar o cliente"),
@@ -391,7 +418,12 @@ def _handoff(conversation, reason, intent, subject, case_id, record, language, m
         "requested": ("Solicita atención humana", "Solicita atendimento humano"),
         "new_dispute": ("Reportar cargo no reconocido", "Contestar cobrança não reconhecida"),
     }
-    packet = {"reason": reason, "test_subject": subject,
+    unresolved = questions[reason][1 if language == "pt" else 0]
+    facts = (_case_view(case_id, record) if record is not None else {})
+    packet = {"reason": reason, "reason_for_escalation": reason,
+              "customer_id": subject, "ticket_id": None,
+              "verified_facts": facts, "open_questions": [unresolved],
+              "sentiment": _sentiment_label(message), "test_subject": subject,
               "request": request_labels[reason][1 if language == "pt" else 0],
               "verified_case": case_id if record is not None else None,
               "verified_status": record["status"] if record is not None else None,
@@ -400,7 +432,7 @@ def _handoff(conversation, reason, intent, subject, case_id, record, language, m
               "source": f"mock-case:{case_id}" if record is not None else None,
               "actions": ["read_only_lookup"] if record is not None else
                          ["lookup_attempted"] if attempts else [],
-              "unresolved": questions[reason][1 if language == "pt" else 0]}
+              "unresolved": unresolved}
     conversation.pending_handoff = packet
     conversation.pending_key = secrets.token_hex(16)
     if reason == "reason_unknown":
@@ -425,8 +457,11 @@ def _ticket_subject(token, conversation, authority, *, now=None):
     return subject
 
 
-def create_handoff_ticket(token, conversation, authority, repository, ticket_store, *,
-                          language="es", now=None, fail_tool=False, fail_write=False, fail_read=False):
+def create_handoff_ticket(token: str, conversation: Conversation, authority: SessionAuthority,
+                          repository: CaseRepository, ticket_store: TicketStore, *,
+                          language: str = "es", now: float | None = None,
+                          fail_tool: bool = False, fail_write: bool = False,
+                          fail_read: bool = False) -> TicketResult:
     """Confirm an explicit request with fresh authorization, write, and readback."""
     language = "pt" if language == "pt" else "es"
     subject = _ticket_subject(token, conversation, authority, now=now)
@@ -438,6 +473,7 @@ def create_handoff_ticket(token, conversation, authority, repository, ticket_sto
                                                "Prepare outro encaminhamento para continuar.", language))
     packet = {**conversation.pending_handoff,
               "actions": list(conversation.pending_handoff["actions"])}
+    packet.pop("ticket_id", None)  # Generated by the store and included in its committed readback.
     view = None
     if packet["verified_case"]:
         case_id = packet["verified_case"]
@@ -449,7 +485,7 @@ def create_handoff_ticket(token, conversation, authority, repository, ticket_sto
                 trace=("ticket_authorization_failed",))
         view = _case_view(case_id, record)
         packet.update(verified_status=record["status"], verified_updated=record["updated"],
-                      snapshot_as_of=AS_OF, source=view["source"])
+                      snapshot_as_of=AS_OF, source=view["source"], verified_facts=view)
         packet["actions"].append("fresh_authorized_lookup")
     try:
         ticket_id, confirmed = ticket_store.create_and_verify(
@@ -468,6 +504,11 @@ def create_handoff_ticket(token, conversation, authority, repository, ticket_sto
             "No pude verificar que se guardara el ticket; inténtalo de nuevo.",
             "Não consegui confirmar que o ticket foi salvo; tente novamente.", language),
             trace=("ticket_unconfirmed",))
+    if confirmed.get("ticket_id") != ticket_id or confirmed.get("customer_id") != subject:
+        return TicketResult("unavailable", say(
+            "No pude verificar el ticket; inténtalo de nuevo.",
+            "Não consegui confirmar o ticket; tente novamente.", language),
+            trace=("ticket_unconfirmed",))
     return TicketResult("created", say(
         "Ticket de prueba guardado y comprobado. No se envió a una persona real.",
         "Ticket de teste salvo e confirmado. Não foi enviado a uma pessoa real.", language),
@@ -475,8 +516,10 @@ def create_handoff_ticket(token, conversation, authority, repository, ticket_sto
         trace=("ticket_saved", "ticket_read_back"))
 
 
-def read_handoff_ticket(token, conversation, authority, repository, ticket_store, ticket_id,
-                        *, now=None, fail_tool=False):
+def read_handoff_ticket(token: str, conversation: Conversation, authority: SessionAuthority,
+                        repository: CaseRepository, ticket_store: TicketStore, ticket_id: str,
+                        *, now: float | None = None,
+                        fail_tool: bool = False) -> dict | None:
     """Only the current mock session can see its ticket; recheck any case ownership."""
     subject = _ticket_subject(token, conversation, authority, now=now)
     if not subject:
@@ -484,6 +527,8 @@ def read_handoff_ticket(token, conversation, authority, repository, ticket_store
     try:
         packet = ticket_store.read(subject, conversation.ticket_scope, ticket_id, now=now)
     except TicketStoreError:
+        return None
+    if packet and (packet.get("customer_id") != subject or packet.get("ticket_id") != ticket_id):
         return None
     if packet and packet.get("verified_case"):
         record, _, failed = _lookup_with_retries(

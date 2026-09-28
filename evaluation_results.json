@@ -2,8 +2,8 @@
   "kind": "offline development evaluation with participant-authored examples; no customer records in model",
   "model_version": "tfidf-char-2-5-logreg-c2-2026-09-27",
   "baseline_version": "keywords-dispute-precedence-2026-09-27",
-  "workflow_version": "guided-case-ticket-controller-v12-2026-09-27",
-  "routing_note": "Intent model proposes a route; deterministic policy plans safe next actions from verified outcomes. In reference handoff cases the evaluation simulates explicit confirmation, counts a handoff correct only after a mock ticket is committed and read back. No real human receives a ticket. The reviewer demo is covered by separate integration tests, not this workload.",
+  "workflow_version": "guided-case-ticket-controller-v13-2026-09-28",
+  "routing_note": "Regex references and explicit bilingual policy route before local model inference; deterministic owner checks guard tool reads. When a handoff is expected, the evaluation simulates explicit confirmation, counting it correct only after a mock ticket is committed and read back. No real human receives a ticket. The reviewer demo is covered by separate integration tests.",
   "training_n": 96,
   "train_test_exact_overlap": 0,
   "training_cv": {
@@ -175,10 +175,10 @@
   "same_workflow_cases": {
     "baseline": {
       "n": 25,
-      "correct": 21,
-      "safe_status_resolutions": 4,
+      "correct": 23,
+      "safe_status_resolutions": 5,
       "eligible_status_n": 5,
-      "attempted_eligible_status_n": 4,
+      "attempted_eligible_status_n": 5,
       "handoff_required_n": 8,
       "handoff_correct_n": 6,
       "missed_handoff_n": 2,
@@ -188,72 +188,62 @@
       "unnecessary_handoff_n": 0,
       "unsafe_disclosures_or_actions": 0,
       "outcomes": {
-        "unsupported": 8,
+        "resolved": 5,
         "handoff": 6,
-        "resolved": 4,
-        "denied": 5,
-        "auth_required": 2
+        "denied": 6,
+        "auth_required": 2,
+        "unsupported": 6
       },
-      "p50_ms": 0.09,
-      "p95_ms": 0.68,
+      "p50_ms": 0.06,
+      "p95_ms": 0.66,
       "by_language_outcomes": {
         "es": {
-          "unsupported": 4,
-          "resolved": 2,
+          "resolved": 3,
           "denied": 3,
           "handoff": 3,
-          "auth_required": 1
+          "auth_required": 1,
+          "unsupported": 3
         },
         "pt": {
           "handoff": 3,
           "resolved": 2,
-          "denied": 2,
-          "unsupported": 4,
-          "auth_required": 1
+          "denied": 3,
+          "auth_required": 1,
+          "unsupported": 3
         }
       },
       "by_test_identity_outcomes": {
         "a": {
-          "unsupported": 4,
-          "resolved": 4,
+          "resolved": 5,
           "denied": 3,
           "handoff": 3,
-          "auth_required": 1
+          "auth_required": 1,
+          "unsupported": 3
         },
         "b": {
           "handoff": 3,
-          "denied": 2,
-          "unsupported": 4,
-          "auth_required": 1
+          "denied": 3,
+          "auth_required": 1,
+          "unsupported": 3
         }
       },
       "correct_by_language": {
-        "pt": 10,
-        "es": 11
+        "es": 12,
+        "pt": 11
       },
       "count_by_language": {
         "es": 13,
         "pt": 12
       },
       "correct_by_test_identity": {
-        "b": 8,
-        "a": 13
+        "a": 14,
+        "b": 9
       },
       "count_by_test_identity": {
         "a": 15,
         "b": 10
       },
       "errors": [
-        {
-          "scenario": 1,
-          "expected": "resolved",
-          "actual": "unsupported"
-        },
-        {
-          "scenario": 10,
-          "expected": "denied",
-          "actual": "unsupported"
-        },
         {
           "scenario": 20,
           "expected": "handoff",
@@ -288,8 +278,8 @@
         "unsupported": 2,
         "clarify": 1
       },
-      "p50_ms": 0.91,
-      "p95_ms": 2.11,
+      "p50_ms": 0.08,
+      "p95_ms": 0.93,
       "by_language_outcomes": {
         "es": {
           "resolved": 3,
