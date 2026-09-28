@@ -6,6 +6,8 @@ All records and PINs in this module are solo participant-authored demo fixtures,
 from dataclasses import dataclass, field
 import base64
 import binascii
+from collections.abc import Mapping
+from datetime import datetime
 import hashlib
 import hmac
 import json
@@ -14,11 +16,12 @@ import secrets
 import time
 
 from intent import baseline, fold, learned
-from handoff_store import TicketStoreError
+from handoff_store import TicketConflictError, TicketStoreError
 
 
 AS_OF = "31/12/2025"
 ACCOUNTS = {"Alicia (prueba)": ("test-a", "1379"), "Bruno (prueba)": ("test-b", "2468")}
+REVIEWER = ("test-reviewer", "8642")
 CASES = {
     "R-101": {"owner": "test-a", "status": "En proceso", "updated": "15/12/2025", "topic": "Cargo no reconocido"},
     "R-102": {"owner": "test-a", "status": "Resuelto", "updated": "20/12/2025", "topic": "Cargo no reconocido"},
@@ -27,6 +30,8 @@ CASES = {
 }
 CASE_RE = re.compile(r"\bR[\s\-–]?\d{3}\b", re.IGNORECASE)
 SENSITIVE_NUMBER_RE = re.compile(r"(?<!\d)(?:\d[\s-]?){11,18}\d(?!\d)")
+UNSUPPORTED_ACTION_RE = re.compile(r"\b(bloque\w*|desbloque\w*|cambi\w*|mudar|alter\w*|modific\w*|atualiz\w*|actualiz\w*)\b")
+UNSUPPORTED_OBJECT_RE = re.compile(r"\b(tarjet\w*|cartao|cartoes|direccion|endereco|domicilio|contrasen\w*|senha\w*)\b")
 
 
 class SessionError(Exception):
@@ -46,24 +51,49 @@ class SessionAuthority:
         if account is None or not hmac.compare_digest(pin, account[1]):
             raise SessionError("Credenciales de prueba incorrectas")
         payload = {"sub": account[0], "exp": int(time.time() if now is None else now) + ttl, "iss": "mock-idp"}
+        return self._seal(payload)
+
+    def issue_reviewer(self, pin, now=None, ttl=600):
+        """Public reviewer identity only for sanitized, fictitious demo tickets."""
+        if not isinstance(pin, str) or not hmac.compare_digest(pin, REVIEWER[1]):
+            raise SessionError("Credenciales de prueba incorrectas")
+        payload = {"sub": REVIEWER[0], "role": "reviewer", "iss": "mock-idp",
+                   "exp": int(time.time() if now is None else now) + ttl}
+        return self._seal(payload)
+
+    def _seal(self, payload):
         encoded = base64.urlsafe_b64encode(json.dumps(payload, separators=(",", ":")).encode()).decode().rstrip("=")
         mac = hmac.new(self.key, encoded.encode(), hashlib.sha256).hexdigest()
         return f"{encoded}.{mac}"
 
-    def verify(self, token, now=None):
+    def _verified_payload(self, token, now=None):
         try:
+            if not isinstance(token, str) or len(token) > 4096:
+                raise SessionError("Sesión inválida")
             body, mac = token.split(".", 1)
             expected = hmac.new(self.key, body.encode(), hashlib.sha256).hexdigest()
             if not hmac.compare_digest(mac, expected):
                 raise SessionError("Sesión inválida")
             payload = json.loads(base64.urlsafe_b64decode(body + "=" * (-len(body) % 4)))
-            if payload.get("iss") != "mock-idp" or payload.get("sub") not in {a[0] for a in ACCOUNTS.values()}:
+            if not isinstance(payload, dict) or payload.get("iss") != "mock-idp":
                 raise SessionError("Sesión inválida")
             if payload.get("exp", 0) <= (time.time() if now is None else now):
                 raise SessionError("Sesión vencida")
-            return payload["sub"]
+            return payload
         except (ValueError, TypeError, KeyError, UnicodeError, AttributeError, binascii.Error) as exc:
             raise SessionError("Sesión inválida") from exc
+
+    def verify(self, token, now=None):
+        payload = self._verified_payload(token, now)
+        if payload.get("sub") not in {a[0] for a in ACCOUNTS.values()} or payload.get("role"):
+            raise SessionError("Sesión inválida")
+        return payload["sub"]
+
+    def verify_reviewer(self, token, now=None):
+        payload = self._verified_payload(token, now)
+        if payload.get("sub") != REVIEWER[0] or payload.get("role") != "reviewer":
+            raise SessionError("Sesión inválida")
+        return payload["sub"]
 
 
 class CaseRepository:
@@ -159,8 +189,19 @@ def _lookup_with_retries(repository, subject, case_id, fail_tool):
 
 
 def _usable_record(record):
-    return (record is not None and record.get("status") in ("En proceso", "Resuelto", "Escalado")
-            and bool(record.get("updated")))
+    """Reject invalid/future source values before presenting them as verified facts."""
+    if not isinstance(record, Mapping) or record.get("status") not in (
+        "En proceso", "Resuelto", "Escalado",
+    ):
+        return False
+    updated = record.get("updated")
+    if not isinstance(updated, str) or not re.fullmatch(r"\d{2}/\d{2}/\d{4}", updated):
+        return False
+    try:
+        value = datetime.strptime(updated, "%d/%m/%Y").date()
+    except ValueError:
+        return False
+    return value <= datetime.strptime(AS_OF, "%d/%m/%Y").date()
 
 
 def _case_view(case_id, record):
@@ -209,6 +250,16 @@ def respond(message, token, conversation, authority, repository, model, *, langu
     # A request for a human or a new dispute takes precedence over prior status context.
     if router == "learned" and explicit in ("human", "new_dispute"):
         intent = explicit
+    elif (explicit not in ("human", "new_dispute") and
+          UNSUPPORTED_ACTION_RE.search(normalized) and UNSUPPORTED_OBJECT_RE.search(normalized)):
+        # A model's similar wording must not turn card/address/password changes
+        # into a fabricated claim about an unrecognized charge.
+        intent = "other"
+    elif (router == "learned" and case_id and intent in ("other", "unclear")
+          and re.search(r"\b(estado|status)\b", normalized)):
+        # A narrow, read-only recovery for an explicit case-status question.
+        # The source still enforces ownership before any fact can be shown.
+        intent = "status"
     using_context = False
     if intent not in ("human", "new_dispute"):
         if len(set(case_ids)) > 1:
@@ -225,7 +276,8 @@ def respond(message, token, conversation, authority, repository, model, *, langu
     steps = ["session_verified", f"route_{intent}"]
     if using_context:
         steps.append("case_from_context")
-    conversation.turns.append({"role": "customer", "language": language, "text": message})
+    # Context needs the route, not a second copy of arbitrary visitor prose.
+    conversation.turns.append({"role": "customer", "language": language, "intent": intent})
     if len(conversation.turns) > 12:
         conversation.turns = conversation.turns[-12:]
     if intent == "status":
@@ -404,6 +456,13 @@ def create_handoff_ticket(token, conversation, authority, repository, ticket_sto
             subject, conversation.ticket_scope, conversation.pending_key, packet,
             now=now, fail_write=fail_write, fail_read=fail_read,
         )
+    except TicketConflictError:
+        conversation.pending_handoff = None
+        conversation.pending_key = ""
+        return TicketResult("stale", say(
+            "El expediente cambió desde que se guardó el ticket. No confirmé esta versión: consulta de nuevo el folio y prepara otra derivación.",
+            "O protocolo mudou desde que o ticket foi salvo. Não confirmei esta versão: consulte novamente o protocolo e prepare outro encaminhamento.", language,
+        ), trace=("ticket_stale",))
     except TicketStoreError:
         return TicketResult("unavailable", say(
             "No pude verificar que se guardara el ticket; inténtalo de nuevo.",
@@ -432,4 +491,29 @@ def read_handoff_ticket(token, conversation, authority, repository, ticket_store
         )
         if failed or not _usable_record(record):
             return None
+        if (record["status"] != packet.get("verified_status") or
+                record["updated"] != packet.get("verified_updated")):
+            return None
     return packet
+
+
+def reviewer_inbox(token, authority, ticket_store, *, now=None):
+    """Reviewer role sees only the sanitized, fictitious packets in this instance."""
+    authority.verify_reviewer(token, now=now)
+    return ticket_store.list_recent(now=now)
+
+
+def read_handoff_review(token, conversation, authority, repository, ticket_store,
+                        ticket_id, *, now=None):
+    """Customer can verify only the review receipt of an accessible ticket."""
+    subject = _ticket_subject(token, conversation, authority, now=now)
+    if not subject or read_handoff_ticket(token, conversation, authority, repository,
+                                          ticket_store, ticket_id, now=now) is None:
+        return None
+    return ticket_store.review_status(subject, conversation.ticket_scope, ticket_id, now=now)
+
+
+def review_handoff_ticket(token, authority, ticket_store, ticket_id, *, now=None):
+    """Acknowledge a demo ticket and return only its committed review receipt."""
+    reviewer = authority.verify_reviewer(token, now=now)
+    return ticket_store.acknowledge(ticket_id, reviewer, now=now)

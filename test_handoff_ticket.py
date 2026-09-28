@@ -133,6 +133,49 @@ class TicketTests(unittest.TestCase):
         source.revoked = True
         self.assertIsNone(self.read(convo, saved.ticket_id, repository=source))
 
+    def test_retry_never_confirms_old_packet_with_a_new_case_view(self):
+        class Mutable(CaseRepository):
+            status = "En proceso"
+            updated = "15/12/2025"
+
+            def lookup(self, customer, case_id, *, fail=False):
+                record = super().lookup(customer, case_id, fail=fail)
+                if record:
+                    record.update(status=self.status, updated=self.updated)
+                return record
+
+        source = Mutable()
+        _, convo = self.ask("Estado de R-101", repository=source)
+        self.ask("Quiero hablar con un agente", convo, repository=source)
+        first = self.create(convo, repository=source)
+        self.assertEqual(first.kind, "created")
+        source.status, source.updated = "Resuelto", "20/12/2025"
+        retry = self.create(convo, repository=source)
+        self.assertEqual(retry.kind, "stale")
+        self.assertFalse(retry.ticket_id)
+        self.assertIsNone(retry.case_view)
+        self.assertIsNone(self.read(convo, first.ticket_id, repository=source))
+        with sqlite3.connect(self.path) as connection:
+            self.assertEqual(connection.execute("SELECT COUNT(*) FROM tickets").fetchone()[0], 1)
+
+    def test_read_refuses_to_represent_outdated_status_as_current(self):
+        class Mutable(CaseRepository):
+            updated = "15/12/2025"
+
+            def lookup(self, customer, case_id, *, fail=False):
+                record = super().lookup(customer, case_id, fail=fail)
+                if record:
+                    record["updated"] = self.updated
+                return record
+
+        source = Mutable()
+        _, convo = self.ask("Estado de R-101", repository=source)
+        self.ask("Quiero hablar con un agente", convo, repository=source)
+        saved = self.create(convo, repository=source)
+        self.assertIsNotNone(self.read(convo, saved.ticket_id, repository=source))
+        source.updated = "21/12/2025"
+        self.assertIsNone(self.read(convo, saved.ticket_id, repository=source))
+
     def test_session_switch_and_expiration_cannot_save_or_read_prior_ticket(self):
         self.ask("Estado de R-101", convo := Conversation())
         self.ask("Quiero un agente", convo)

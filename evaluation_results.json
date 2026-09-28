@@ -2,8 +2,8 @@
   "kind": "offline development evaluation with participant-authored examples; no customer records in model",
   "model_version": "tfidf-char-2-5-logreg-c2-2026-09-27",
   "baseline_version": "keywords-dispute-precedence-2026-09-27",
-  "workflow_version": "guided-case-ticket-controller-v10-2026-09-27",
-  "routing_note": "Intent model proposes a route; deterministic policy plans safe next actions from verified outcomes. In reference handoff cases the evaluation simulates explicit confirmation, counts a handoff correct only after a mock ticket is committed and read back. No real human receives a ticket; additional tests cover revocation and failures.",
+  "workflow_version": "guided-case-ticket-controller-v12-2026-09-27",
+  "routing_note": "Intent model proposes a route; deterministic policy plans safe next actions from verified outcomes. In reference handoff cases the evaluation simulates explicit confirmation, counts a handoff correct only after a mock ticket is committed and read back. No real human receives a ticket. The reviewer demo is covered by separate integration tests, not this workload.",
   "training_n": 96,
   "train_test_exact_overlap": 0,
   "training_cv": {
@@ -195,7 +195,7 @@
         "auth_required": 2
       },
       "p50_ms": 0.09,
-      "p95_ms": 1.22,
+      "p95_ms": 0.68,
       "by_language_outcomes": {
         "es": {
           "unsupported": 4,
@@ -283,13 +283,13 @@
       "outcomes": {
         "resolved": 5,
         "handoff": 9,
-        "denied": 5,
+        "denied": 6,
         "auth_required": 2,
-        "unsupported": 3,
+        "unsupported": 2,
         "clarify": 1
       },
-      "p50_ms": 1.51,
-      "p95_ms": 12.83,
+      "p50_ms": 0.91,
+      "p95_ms": 2.11,
       "by_language_outcomes": {
         "es": {
           "resolved": 3,
@@ -302,9 +302,9 @@
         "pt": {
           "handoff": 5,
           "resolved": 2,
-          "denied": 2,
+          "denied": 3,
           "auth_required": 1,
-          "unsupported": 2
+          "unsupported": 1
         }
       },
       "by_test_identity_outcomes": {
@@ -318,9 +318,9 @@
         },
         "b": {
           "handoff": 5,
-          "denied": 2,
+          "denied": 3,
           "auth_required": 1,
-          "unsupported": 2
+          "unsupported": 1
         }
       },
       "correct_by_language": {

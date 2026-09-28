@@ -1,9 +1,10 @@
 # Tu siguiente paso, Isaac
 
-Esta actualización incluye la app, la evaluación sintética nueva y una guía al día. No necesitas
+Esta actualización incluye la app v12, la bandeja de revisión simulada y la regresión de
+desarrollo. No necesitas
 instalar Python en Windows para probar la demo.
 
-1. Descomprime `Factored_actualizacion_v11.zip`. Para cumplir el nombre pedido,
+1. Descomprime `Factored_codigo_v12.zip`. Para cumplir el nombre pedido,
    crea otro repositorio **público** llamado
    `factored-hackathon-2026-isaac-gregorio`. Mantén el repositorio y la app
    actuales mientras preparas y compruebas la nueva entrega.
@@ -21,7 +22,12 @@ instalar Python en Windows para probar la demo.
    **«Crear ticket de prueba»**. Aparecerá un ID `T-...` únicamente si la app
    guardó el ticket y lo leyó de vuelta. El estado se consulta de nuevo y se
    verifica el permiso antes de guardarlo; no se envía a una persona real.
-4. Para probar seguridad, como Alicia consulta `R-201`: la pantalla no mostrará
+4. En **«Mesa de revisión»**, entra como analista de prueba con el PIN público
+   `8642`. Busca el ID `T-...` y pulsa **«Confirmar recepción de prueba»**.
+   Regresa a «Mi expediente»: el cliente ve que la recepción quedó confirmada.
+   La bandeja solo guarda paquetes ficticios, no texto libre ni solicitudes a
+   una persona real.
+5. Para probar seguridad, como Alicia consulta `R-201`: la pantalla no mostrará
    el estado de Bruno. Para probar Bruno, cierra sesión y abre «Probar otro perfil
    con PIN público»: elige Bruno y escribe `2468`. Prueba también idioma portugués,
    «No tengo el folio», sesión vencida y falla de consulta. En «Simular errores»
@@ -45,9 +51,12 @@ observadas en solo 25 escenarios; no implica seguridad demostrada a escala.
 Las frases de esa evaluación ya se inspeccionaron durante el desarrollo. La
 prueba adicional `synthetic_eval_cases_v11.json`, escrita por IA y etiquetada
 antes de ejecutarse, encontró **35/40** intenciones y **14/18** flujos correctos
-con el modelo, frente a **30/40** y **12/18** con las reglas. Hubo cuatro fallos de
-flujo con el modelo. No lo ajustamos después de verlos. Tampoco esta muestra
-es una evaluación humana independiente; hace falta para medir calidad real.
+con el modelo, frente a **30/40** y **12/18** con reglas. Es el resultado
+histórico previo a v12. Después corregimos el controlador y lo volvimos a
+probar sobre **los mismos casos**: **15/18** flujos con modelo. La segunda cifra
+es una regresión de desarrollo, no una evaluación independiente; quedan tres
+fallos del flujo. El modelo ML sigue siendo el mismo. Se necesitan preguntas
+nuevas etiquetadas por personas para medir calidad real.
 
 **Lo que aún falta antes de operar en un banco:** identidad real, permisos de una
 fuente autorizada y actual, prueba nueva con preguntas de otras personas en ES/PT,
@@ -56,12 +65,8 @@ Esta versión es una demo con datos ficticios, no un servicio bancario conectado
 
 **Entrega según el kickoff:** el repositorio nuevo debe seguir el nombre pedido
 `factored-hackathon-2026-[nombre-del-equipo]`; incluye el enlace público del
-repositorio y el de la app nueva. La presentación de **seis diapositivas** y el
-**video corto con subtítulos** están separados del ZIP de código, junto con un
-guion para narrar el video. No renombres directamente el repositorio de la app
-actual: Streamlit puede perder acceso de administración a ese despliegue.
+repositorio y el de la app nueva. La presentación y el video se revisarán tras
+comprobar que este código ya funciona en el despliegue. No renombres directamente
+el repositorio de la app actual: Streamlit puede perder acceso de administración.
 
-Para las diapositivas, sugiero cinco partes: (1) problema y cifras, (2) fallo de
-calidad en las transcripciones, (3) flujo con sesión y autorización por expediente,
-(4) demo ES/PT con derivación, (5) evaluación, límites y camino a producción.
 El archivo `README.md` contiene la arquitectura, los comandos y los resultados.

@@ -1,6 +1,7 @@
 """Bilingual public demo of complaint lookup and a confirmed mock handoff ticket."""
 
 from html import escape
+from datetime import datetime, timezone
 import json
 from pathlib import Path
 import time
@@ -8,9 +9,10 @@ import time
 import streamlit as st
 
 from intent import make_model
-from handoff_store import TicketStore
+from handoff_store import TicketStore, TicketStoreError
 from service import (ACCOUNTS, CaseRepository, Conversation, SessionAuthority, SessionError,
-                     contains_sensitive_number, create_handoff_ticket, read_handoff_ticket, respond)
+                     contains_sensitive_number, create_handoff_ticket, read_handoff_ticket,
+                     read_handoff_review, respond, review_handoff_ticket, reviewer_inbox)
 
 
 st.set_page_config(
@@ -44,8 +46,8 @@ COPY = {
     "es": {
         "title": "Tu reclamación, paso a paso",
         "subtitle": "Consulta un folio de prueba, revisa qué se verificó y elige el siguiente paso.",
-        "tag": "Prototipo · expedientes ficticios · copia de 2025",
-        "tabs": ["Mi expediente", "Datos y resultados", "Cómo funciona"],
+        "tag": "Prototipo v12 · expedientes ficticios · copia de 2025",
+        "tabs": ["Mi expediente", "Mesa de revisión", "Datos y resultados", "Cómo funciona"],
         "start": "Comienza con un perfil de prueba",
         "intro": "Los perfiles y PIN son públicos y ficticios. No uses datos bancarios reales.",
         "profile": "Perfil ficticio", "pin": "PIN de prueba",
@@ -88,6 +90,7 @@ COPY = {
         "history": "Ver historial de la consulta", "history_empty": "Todavía no hay interacciones.",
         "audit": "Verificación y pasos ejecutados", "simulated_handoff": "Contexto listo. Puedes guardarlo en la cola de prueba; no lo recibe una persona real.",
         "create_ticket": "Crear ticket de prueba", "ticket_confirmed": "Ticket {id}: guardado y leído de la cola de prueba. No lo recibe un agente real.",
+        "review_received": "Un analista de prueba confirmó la recepción en esta instancia. No es atención bancaria real.",
         "ticket_unavailable": "No pude comprobar este ticket en la cola de prueba. Prepara otra derivación.",
         "ticket_expires": "Cola temporal de esta instancia; el ticket deja de poder leerse tras 24 horas y puede perderse si reinicia el servidor.",
         "examples_title": "Escenarios de prueba", "test_own": "Consultar folio propio",
@@ -159,9 +162,11 @@ COPY = {
         "cv_note": "Selección del modelo: 3 repeticiones de validación cruzada en las 96 frases de entrenamiento ({old}/{n} aciertos del anterior; {new}/{n} del actual). Son 288 predicciones de las mismas 96 frases, no 288 casos independientes. El conjunto de 30 frases ya se había inspeccionado en una versión anterior: evaluación exploratoria, no prueba ciega.",
         "limits": "Muestras pequeñas escritas por un solo autor; sin registros de clientes en la app. Latencia medida localmente; costo de API USD 0, alojamiento sin estimar. Cero fallas observadas no significa riesgo cero.",
         "fresh_title": "Prueba sintética adicional con preguntas nuevas",
-        "fresh_note": "40 preguntas (20 ES y 20 PT) y 18 flujos etiquetados por IA antes de ejecutarlos; ninguna frase coincide exactamente con el entrenamiento o la evaluación anterior. Es una prueba sintética nueva, no una muestra humana independiente. No cambiamos el modelo después de ver los resultados.",
+        "fresh_note": "Resultado histórico v11: 40 preguntas (20 ES, 20 PT) y 18 flujos etiquetados por IA antes de su primera ejecución. Es una prueba sintética, no una muestra humana independiente. El controlador v12 se corrigió después de analizar estos errores.",
         "fresh_errors": "Errores observados en los 18 flujos del modelo",
         "fresh_limits": "Los errores cuentan como errores aunque el sistema haya pedido aclaración de forma segura. La prueba detectó cero divulgaciones indebidas en sus casos de seguridad, pero su tamaño no demuestra ausencia de riesgo. La latencia es local y la cola de tickets no llega a un agente real.",
+        "regression_title": "Regresión de desarrollo v12 · mismos casos",
+        "regression_note": "Repetimos 40 preguntas y 18 flujos tras ajustar el controlador. Esto detecta regresiones; no es un conjunto nuevo ni evidencia independiente de mejora. La mesa del analista tiene pruebas específicas aparte.",
         "design": "Cuatro decisiones de diseño",
         "steps": [
             ("01 · Sesión", "Un emisor ficticio firma un token que vence en 10 minutos. El PIN público reproduce la demo; no autentica a un cliente bancario."),
@@ -172,12 +177,25 @@ COPY = {
         "future": "Antes de operar en un banco",
         "roadmap": "Integrar identidad real, permisos y fuentes autorizadas con fecha de actualización; reunir consultas ES/PT consentidas y etiquetadas; hacer pruebas independientes más amplias, auditoría, monitoreo y políticas de retención.",
         "boundary": "Esta app no abre reclamaciones, no mueve dinero y no consulta un banco real.",
+        "review": {
+            "title": "Mesa de revisión · simulación",
+            "note": "Una segunda identidad de prueba puede leer los tickets guardados y confirmar su recepción. Esta bandeja no envía nada a un banco ni a un agente real; solo contiene paquetes ficticios sin el texto libre del visitante.",
+            "pin": "PIN público del analista de prueba: 8642",
+            "enter": "Entrar como analista de prueba", "bad_pin": "PIN de prueba incorrecto.",
+            "expired": "La sesión del analista venció. Vuelve a entrar si quieres continuar.",
+            "logout": "Cerrar sesión de analista", "empty": "Aún no hay tickets en esta instancia. Crea uno desde «Mi expediente» y vuelve a esta pestaña.",
+            "pending": "Pendiente de recepción", "reviewed": "Recibido en la mesa de prueba",
+            "created": "Guardado (UTC)", "packet": "Paquete de derivación ficticio",
+            "ack": "Confirmar recepción de prueba", "saved": "Recepción guardada y comprobada. No implica atención por una persona real.",
+            "missing": "Este ticket ya no está disponible. Actualiza la bandeja.",
+            "error": "La cola de prueba no respondió. Intenta actualizar esta pestaña.",
+        },
     },
     "pt": {
         "title": "Sua reclamação, passo a passo",
         "subtitle": "Consulte um protocolo de teste, veja o que foi verificado e escolha o próximo passo.",
-        "tag": "Protótipo · registros fictícios · cópia de 2025",
-        "tabs": ["Meu protocolo", "Dados e resultados", "Como funciona"],
+        "tag": "Protótipo v12 · registros fictícios · cópia de 2025",
+        "tabs": ["Meu protocolo", "Mesa de revisão", "Dados e resultados", "Como funciona"],
         "start": "Comece com um perfil de teste",
         "intro": "Os perfis e PINs são públicos e fictícios. Não use dados bancários reais.",
         "profile": "Perfil fictício", "pin": "PIN de teste",
@@ -220,6 +238,7 @@ COPY = {
         "history": "Ver histórico da consulta", "history_empty": "Ainda não há interações.",
         "audit": "Verificação e etapas realizadas", "simulated_handoff": "Contexto pronto. Você pode salvá-lo na fila de teste; nenhuma pessoa o recebe.",
         "create_ticket": "Criar ticket de teste", "ticket_confirmed": "Ticket {id}: salvo e lido da fila de teste. Nenhum atendente o recebe.",
+        "review_received": "Um analista de teste confirmou o recebimento nesta instância. Não é atendimento bancário real.",
         "ticket_unavailable": "Não consegui confirmar este ticket na fila de teste. Prepare outro encaminhamento.",
         "ticket_expires": "Fila temporária desta instância; o ticket deixa de ser legível após 24 horas e pode se perder se o servidor reiniciar.",
         "examples_title": "Cenários de teste", "test_own": "Consultar meu protocolo",
@@ -291,9 +310,11 @@ COPY = {
         "cv_note": "Escolha do modelo: 3 repetições de validação cruzada nas 96 frases de treinamento ({old}/{n} acertos do anterior; {new}/{n} do atual). São 288 previsões das mesmas 96 frases, não 288 casos independentes. O conjunto de 30 frases já havia sido examinado em uma versão anterior: avaliação exploratória, não teste cego.",
         "limits": "Amostras pequenas escritas por um só autor; sem dados de clientes no app. Latência medida localmente; custo de API USD 0, hospedagem não estimada. Nenhuma falha observada não significa risco zero.",
         "fresh_title": "Teste sintético adicional com perguntas novas",
-        "fresh_note": "40 perguntas (20 ES e 20 PT) e 18 fluxos rotulados por IA antes da execução; nenhuma frase coincide exatamente com o treinamento ou a avaliação anterior. É um teste sintético novo, não uma amostra humana independente. O modelo não foi alterado após a análise dos resultados.",
+        "fresh_note": "Resultado histórico v11: 40 perguntas (20 ES, 20 PT) e 18 fluxos rotulados por IA antes da primeira execução. É um teste sintético, não uma amostra humana independente. O controlador v12 foi corrigido após a análise desses erros.",
         "fresh_errors": "Erros observados nos 18 fluxos do modelo",
         "fresh_limits": "Os erros contam como erros mesmo quando o sistema pediu esclarecimentos de modo seguro. O teste não detectou divulgação indevida nos casos de segurança, mas a amostra não prova ausência de risco. A latência é local e a fila de tickets não chega a um atendente real.",
+        "regression_title": "Regressão de desenvolvimento v12 · mesmos casos",
+        "regression_note": "Repetimos 40 perguntas e 18 fluxos depois de ajustar o controlador. Isto detecta regressões; não é um conjunto novo nem evidência independente de melhora. A mesa do analista tem testes específicos separados.",
         "design": "Quatro decisões de projeto",
         "steps": [
             ("01 · Sessão", "Um emissor fictício assina um token que expira em 10 minutos. O PIN público reproduz a demonstração; não autentica um cliente bancário."),
@@ -304,6 +325,19 @@ COPY = {
         "future": "Antes de operar em um banco",
         "roadmap": "Integrar identidade real, permissões e fontes autorizadas com data de atualização; reunir consultas ES/PT consentidas e rotuladas; ampliar testes independentes, auditoria, monitoramento e políticas de retenção.",
         "boundary": "Este app não abre reclamações, não movimenta dinheiro e não consulta um banco real.",
+        "review": {
+            "title": "Mesa de revisão · simulação",
+            "note": "Uma segunda identidade de teste pode ler tickets salvos e confirmar seu recebimento. Esta fila não envia nada a um banco ou atendente real; contém apenas pacotes fictícios sem o texto livre do visitante.",
+            "pin": "PIN público do analista de teste: 8642",
+            "enter": "Entrar como analista de teste", "bad_pin": "PIN de teste incorreto.",
+            "expired": "A sessão do analista expirou. Entre novamente para continuar.",
+            "logout": "Encerrar sessão do analista", "empty": "Ainda não há tickets nesta instância. Crie um em «Meu protocolo» e volte a esta aba.",
+            "pending": "Pendente de recebimento", "reviewed": "Recebido na mesa de teste",
+            "created": "Salvo (UTC)", "packet": "Pacote fictício de encaminhamento",
+            "ack": "Confirmar recebimento de teste", "saved": "Recebimento salvo e confirmado. Não significa atendimento por uma pessoa real.",
+            "missing": "Este ticket não está mais disponível. Atualize a fila.",
+            "error": "A fila de teste não respondeu. Tente atualizar esta aba.",
+        },
     },
 }
 st.markdown("""
@@ -339,7 +373,7 @@ st.markdown(
     f'<span class="factored-tag">{escape(t["tag"])}</span></section>',
     unsafe_allow_html=True,
 )
-demo, data_tab, design_tab = st.tabs(t["tabs"])
+demo, review_tab, data_tab, design_tab = st.tabs(t["tabs"])
 
 with demo:
     if "token" in st.session_state:
@@ -453,6 +487,15 @@ with demo:
                     if saved_ticket:
                         st.success(t["ticket_confirmed"].format(id=last["ticket_id"]))
                         st.caption(t["ticket_expires"])
+                        try:
+                            review_receipt = read_handoff_review(
+                                st.session_state.token, conversation, authority,
+                                repository, tickets, last["ticket_id"],
+                            )
+                        except TicketStoreError:
+                            review_receipt = None
+                        if review_receipt:
+                            st.info(t["review_received"])
                     else:
                         st.warning(t["ticket_unavailable"])
                 elif last.get("handoff"):
@@ -471,6 +514,12 @@ with demo:
                             last["evidence"] = result.packet.get("source") or ""
                             last["trace"] = tuple(last["trace"]) + result.trace
                             last["plan"] = {"state": "ticket_created", "actions": ()}
+                            st.rerun()
+                        elif result.kind == "stale":
+                            last.update(text=result.text, kind="stale", handoff=None,
+                                        case_view=None, evidence="",
+                                        plan={"state": "ticket_unavailable", "actions": ("human",)},
+                                        trace=tuple(last["trace"]) + result.trace)
                             st.rerun()
                         else:
                             st.warning(result.text)
@@ -533,7 +582,10 @@ with demo:
                 st.caption(t["history_empty"])
             for entry in messages[-12:]:
                 with st.chat_message(entry["speaker"]):
-                    st.markdown(entry["text"])
+                    if entry["speaker"] == "user":
+                        st.text(entry["text"])
+                    else:
+                        st.markdown(entry["text"])
 
         if prompt:
             reply = respond(
@@ -556,6 +608,74 @@ with demo:
             if len(messages) > 24:
                 del messages[:-24]
             st.rerun()
+
+with review_tab:
+    review = t["review"]
+    st.subheader(review["title"])
+    st.info(review["note"])
+    reviewer_token = st.session_state.get("reviewer_token")
+    if reviewer_token:
+        try:
+            authority.verify_reviewer(reviewer_token)
+        except SessionError:
+            st.session_state.pop("reviewer_token", None)
+            reviewer_token = None
+            st.warning(review["expired"])
+    if not reviewer_token:
+        with st.form("reviewer_login", clear_on_submit=True):
+            st.caption(review["pin"])
+            reviewer_pin = st.text_input(t["pin"], type="password", max_chars=8,
+                                         key="reviewer_pin")
+            reviewer_enter = st.form_submit_button(review["enter"], type="primary")
+        if reviewer_enter:
+            try:
+                st.session_state.reviewer_token = authority.issue_reviewer(reviewer_pin)
+            except SessionError:
+                st.error(review["bad_pin"])
+            else:
+                st.rerun()
+    else:
+        if st.button(review["logout"], key="reviewer_logout"):
+            st.session_state.pop("reviewer_token", None)
+            st.rerun()
+        try:
+            queue = reviewer_inbox(reviewer_token, authority, tickets)
+        except SessionError:
+            st.session_state.pop("reviewer_token", None)
+            st.warning(review["expired"])
+            st.rerun()
+        except TicketStoreError:
+            st.error(review["error"])
+            queue = None
+        if queue == []:
+            st.caption(review["empty"])
+        for item in queue or []:
+            with st.container(border=True):
+                st.markdown(f'**{item["ticket_id"]}** · '
+                            f'{review["reviewed"] if item["reviewed_at"] else review["pending"]}')
+                created = datetime.fromtimestamp(item["created_at"], timezone.utc)
+                st.caption(f'{review["created"]}: {created:%d/%m/%Y %H:%M}')
+                st.write(item["packet"]["request"])
+                with st.expander(review["packet"]):
+                    st.json(item["packet"])
+                if item["reviewed_at"] is None:
+                    if st.button(review["ack"], key=f'reviewer_ack_{item["ticket_id"]}'):
+                        try:
+                            receipt = review_handoff_ticket(
+                                reviewer_token, authority, tickets, item["ticket_id"],
+                            )
+                        except SessionError:
+                            st.session_state.pop("reviewer_token", None)
+                            st.warning(review["expired"])
+                            st.rerun()
+                        except TicketStoreError:
+                            st.error(review["error"])
+                        else:
+                            if receipt:
+                                st.success(review["saved"])
+                                st.rerun()
+                            else:
+                                st.warning(review["missing"])
 
 with data_tab:
     folder = Path(__file__).parent
@@ -646,6 +766,19 @@ with data_tab:
         st.caption(t["fresh_limits"])
         with st.expander(t["fresh_errors"]):
             st.table(fresh["workflow"]["learned"]["errors"])
+    regression_path = folder / "synthetic_eval_results_v12_regression.json"
+    if regression_path.exists():
+        regression = json.loads(regression_path.read_text(encoding="utf-8"))
+        st.subheader(t["regression_title"])
+        st.caption(t["regression_note"])
+        st.table([
+            {t["metric"]: t["accuracy"], t["rules"]: f'{regression["intents"]["rules"]["correct"]}/40',
+             t["learned"]: f'{regression["intents"]["learned"]["correct"]}/40'},
+            {t["metric"]: t["workflow"], t["rules"]: f'{regression["workflow"]["baseline"]["correct"]}/18',
+             t["learned"]: f'{regression["workflow"]["learned"]["correct"]}/18'},
+        ])
+        with st.expander(t["fresh_errors"]):
+            st.table(regression["workflow"]["learned"]["errors"])
 
 with design_tab:
     st.subheader(t["design"])

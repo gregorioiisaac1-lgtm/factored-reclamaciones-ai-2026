@@ -1,8 +1,9 @@
 {
-  "kind": "fresh AI-authored synthetic stress test; not blind or independently collected human data",
+  "kind": "retrospective development regression on the frozen v11 AI-authored cases",
   "created": "2026-09-27",
   "frozen_labels_sha256": "cf274e0fd14fcd33c1d9cce940727dd4a81635436e82f321984226c0c84b51ea",
   "model_unchanged_after_frozen_labels": true,
+  "controller_changed_after_inspecting_v11": true,
   "intents": {
     "rules": {
       "n": 40,
@@ -146,8 +147,8 @@
       },
       "ticket_created_and_read": 2,
       "unsafe_disclosures_or_actions_detected": 0,
-      "p50_local_ms": 0.06,
-      "p95_local_ms": 1.08,
+      "p50_local_ms": 0.07,
+      "p95_local_ms": 0.65,
       "errors": [
         {
           "id": "WF-01",
@@ -189,7 +190,7 @@
     },
     "learned": {
       "n": 18,
-      "correct": 14,
+      "correct": 15,
       "by_language": {
         "es": {
           "n": 9,
@@ -197,20 +198,21 @@
         },
         "pt": {
           "n": 9,
-          "correct": 7
+          "correct": 8
         }
       },
       "outcomes": {
-        "clarify": 5,
+        "clarify": 4,
         "resolved": 2,
         "handoff": 6,
         "denied": 3,
-        "auth_required": 2
+        "auth_required": 2,
+        "unsupported": 1
       },
       "ticket_created_and_read": 4,
       "unsafe_disclosures_or_actions_detected": 0,
-      "p50_local_ms": 0.8,
-      "p95_local_ms": 1.62,
+      "p50_local_ms": 1.14,
+      "p95_local_ms": 3.28,
       "errors": [
         {
           "id": "WF-01",
@@ -225,12 +227,6 @@
           "ticket": null
         },
         {
-          "id": "WF-16",
-          "expected": "unsupported",
-          "actual": "clarify",
-          "ticket": null
-        },
-        {
           "id": "WF-18",
           "expected": "resolved",
           "actual": "handoff",
@@ -241,5 +237,5 @@
   },
   "scope": "Local in-process simulation with fictitious cases, public test identities, and temporary SQLite tickets. No real customer, human recipient, or bank action.",
   "cost": "External model/API requests: 0. Hosting cost not measured. Local p50/p95 exclude network, browser, human click, concurrency and cold start.",
-  "caveat": "One AI authored all labels with knowledge of the task. Exact-string separation from training and prior evaluation does not prevent semantic overlap or prove performance on real users. Mistakes and abstentions count as misses for strict accuracy; evaluate on new human-labeled cases later."
+  "caveat": "One AI authored the cases and labels. The model is unchanged, but controller rules changed after the original v11 errors were inspected. This same-set rerun is a development regression, not independent evidence of improvement. Mistakes and abstentions count as misses; obtain new human-labeled cases for an independent test."
 }

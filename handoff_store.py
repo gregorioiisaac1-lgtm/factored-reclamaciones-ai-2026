@@ -16,6 +16,10 @@ class TicketStoreError(Exception):
     pass
 
 
+class TicketConflictError(TicketStoreError):
+    """The same confirmation key already refers to a different verified packet."""
+
+
 class TicketStore:
     retention_seconds = 24 * 60 * 60
 
@@ -33,7 +37,12 @@ class TicketStore:
             created_at INTEGER NOT NULL,
             packet TEXT NOT NULL,
             UNIQUE(owner, session_scope, request_key)
-        )""")
+            )""")
+            connection.execute("""CREATE TABLE IF NOT EXISTS reviews (
+            ticket_id TEXT PRIMARY KEY,
+            reviewer TEXT NOT NULL,
+            reviewed_at INTEGER NOT NULL
+            )""")
         except sqlite3.Error:
             connection.close()
             raise
@@ -46,6 +55,7 @@ class TicketStore:
         try:
             with closing(self._connect()) as connection, connection:
                 connection.execute("DELETE FROM tickets WHERE created_at < ?", (timestamp - self.retention_seconds,))
+                connection.execute("DELETE FROM reviews WHERE ticket_id NOT IN (SELECT ticket_id FROM tickets)")
                 if fail_write:
                     raise sqlite3.OperationalError("simulated write failure")
                 connection.execute(
@@ -63,6 +73,10 @@ class TicketStore:
             confirmed = self.read(owner, session_scope, row[0], now=timestamp)
             if confirmed is None:
                 raise TicketStoreError("ticket not confirmed")
+            if confirmed != packet:
+                # An idempotent retry must never join an old persisted packet
+                # to a newly fetched case view and claim both are current.
+                raise TicketConflictError("case changed after ticket confirmation")
             return row[0], confirmed
         except (OSError, sqlite3.Error) as exc:
             raise TicketStoreError("ticket queue unavailable") from exc
@@ -79,3 +93,63 @@ class TicketStore:
             return json.loads(row[0]) if row else None
         except (OSError, sqlite3.Error, ValueError) as exc:
             raise TicketStoreError("ticket queue unavailable") from exc
+
+    def list_recent(self, *, now=None, limit=25):
+        """Return the test reviewer's bounded inbox of sanitized packets."""
+        timestamp = int(time.time() if now is None else now)
+        try:
+            with closing(self._connect()) as connection:
+                rows = connection.execute(
+                    """SELECT t.ticket_id, t.created_at, t.packet, r.reviewed_at
+                       FROM tickets AS t LEFT JOIN reviews AS r ON r.ticket_id = t.ticket_id
+                       WHERE t.created_at >= ? ORDER BY t.created_at DESC, t.ticket_id DESC
+                       LIMIT ?""",
+                    (timestamp - self.retention_seconds, min(max(1, limit), 25)),
+                ).fetchall()
+            return [{"ticket_id": ticket_id, "created_at": created,
+                     "packet": json.loads(packet), "reviewed_at": reviewed}
+                    for ticket_id, created, packet, reviewed in rows]
+        except (OSError, sqlite3.Error, ValueError) as exc:
+            raise TicketStoreError("ticket queue unavailable") from exc
+
+    def acknowledge(self, ticket_id, reviewer, *, now=None):
+        """Confirm a review write with a committed readback; never fabricate receipt."""
+        timestamp = int(time.time() if now is None else now)
+        try:
+            with closing(self._connect()) as connection, connection:
+                exists = connection.execute(
+                    "SELECT 1 FROM tickets WHERE ticket_id = ? AND created_at >= ?",
+                    (ticket_id, timestamp - self.retention_seconds),
+                ).fetchone()
+                if not exists:
+                    return None
+                connection.execute(
+                    """INSERT INTO reviews (ticket_id, reviewer, reviewed_at)
+                       VALUES (?, ?, ?) ON CONFLICT(ticket_id) DO NOTHING""",
+                    (ticket_id, reviewer, timestamp),
+                )
+            with closing(self._connect()) as connection:
+                row = connection.execute(
+                    "SELECT reviewer, reviewed_at FROM reviews WHERE ticket_id = ?", (ticket_id,),
+                ).fetchone()
+            if row is None:
+                raise TicketStoreError("review not confirmed")
+            return {"ticket_id": ticket_id, "reviewer": row[0], "reviewed_at": row[1]}
+        except (OSError, sqlite3.Error) as exc:
+            raise TicketStoreError("review queue unavailable") from exc
+
+    def review_status(self, owner, session_scope, ticket_id, *, now=None):
+        """Show the owner only a verified receipt for this session's ticket."""
+        timestamp = int(time.time() if now is None else now)
+        try:
+            with closing(self._connect()) as connection:
+                row = connection.execute(
+                    """SELECT r.reviewer, r.reviewed_at FROM tickets AS t
+                       JOIN reviews AS r ON r.ticket_id = t.ticket_id
+                       WHERE t.ticket_id = ? AND t.owner = ? AND t.session_scope = ?
+                       AND t.created_at >= ?""",
+                    (ticket_id, owner, session_scope, timestamp - self.retention_seconds),
+                ).fetchone()
+            return {"ticket_id": ticket_id, "reviewer": row[0], "reviewed_at": row[1]} if row else None
+        except (OSError, sqlite3.Error) as exc:
+            raise TicketStoreError("review queue unavailable") from exc

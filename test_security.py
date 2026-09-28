@@ -68,6 +68,27 @@ class SecurityTests(unittest.TestCase):
         self.assertFalse(reply.handoff)
         self.assertFalse(conversation.turns)
 
+    def test_service_context_keeps_routing_state_without_raw_message(self):
+        conversation = Conversation()
+        phrase = "Estado de R-101, mis comentarios personales son privados"
+        reply = respond(phrase, self.a, conversation, self.authority,
+                        self.repo, self.model, router="learned", now=1001)
+        self.assertEqual(reply.kind, "resolved")
+        self.assertEqual(conversation.last_verified_case, "R-101")
+        self.assertNotIn("comentarios personales", str(conversation.turns))
+        self.assertEqual(conversation.turns[-1]["intent"], "status")
+
+    def test_unsupported_account_changes_do_not_become_false_charge_disputes(self):
+        for language, phrase in (
+            ("es", "Quiero bloquear la tarjeta vinculada a R-101"),
+            ("pt", "Onde posso mudar o endereço do meu cadastro?"),
+        ):
+            with self.subTest(phrase=phrase):
+                reply = self.query(phrase, router="learned", language=language)
+                self.assertEqual(reply.kind, "unsupported")
+                self.assertFalse(reply.handoff)
+                self.assertIsNone(reply.case_view)
+
     def test_wrong_pin_cannot_issue_session(self):
         with self.assertRaises(SessionError):
             self.authority.issue("Alicia (prueba)", "2468", now=1000)
@@ -82,6 +103,27 @@ class SecurityTests(unittest.TestCase):
             "source": "mock-case:R-101", "snapshot_as_of": "31/12/2025",
         })
         self.assertEqual(reply.plan, {"state": "in_progress", "actions": ("date", "reason", "human")})
+
+    def test_invalid_or_future_source_dates_are_not_answered_as_verified(self):
+        class BadSource(CaseRepository):
+            value = "31/02/2025"
+
+            def lookup(self, customer, case_id, *, fail=False):
+                record = super().lookup(customer, case_id, fail=fail)
+                if record:
+                    record["updated"] = self.value
+                return record
+
+        source = BadSource()
+        for value in ("31/02/2025", "01/01/2026", 20251215, "15/12/2025 extra"):
+            with self.subTest(value=value):
+                source.value = value
+                reply = respond("Estado de R-101", self.a, Conversation(), self.authority,
+                                source, self.model, router="learned", now=1001)
+                self.assertEqual(reply.kind, "handoff")
+                self.assertEqual(reply.handoff["reason"], "invalid_data")
+                self.assertIsNone(reply.case_view)
+                self.assertIsNone(reply.handoff["verified_status"])
 
     def test_guided_actions_follow_authorized_result(self):
         resolved = self.query("Estado de R-102", router="learned")
